@@ -1,0 +1,497 @@
+"use client";
+
+import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import type {
+  UserMode,
+  BookData,
+  BookAnalytics,
+  ParseResult,
+  FAClientRecord,
+  FAHolding,
+  AcctClientRecord,
+} from "@/lib/types";
+import { computeAnalytics } from "@/lib/analytics";
+import { buildSystemPrompt } from "@/lib/system-prompt";
+import {
+  FA_DEMO_CLIENTS,
+  FA_DEMO_HOLDINGS,
+  ACCT_DEMO_CLIENTS,
+} from "@/lib/demo-data";
+import UploadPanel from "@/components/upload-panel";
+import PrivacyGate from "@/components/privacy-gate";
+import BookSummary from "@/components/book-summary";
+import ClientTable from "@/components/client-table";
+import ChatInterface from "@/components/chat-interface";
+
+type Step = "mode" | "upload" | "privacy" | "chat";
+
+function ReviewContent() {
+  const searchParams = useSearchParams();
+  const [step, setStep] = useState<Step>("mode");
+  const [mode, setMode] = useState<UserMode | null>(null);
+  const [book, setBook] = useState<BookData | null>(null);
+  const [analytics, setAnalytics] = useState<BookAnalytics | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState<string>("");
+  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
+
+  useEffect(() => {
+    const demo = searchParams.get("demo");
+    if (demo === "fa") {
+      setMode("financial_advisor");
+      loadDemo("financial_advisor");
+    } else if (demo === "acct") {
+      setMode("accountant");
+      loadDemo("accountant");
+    }
+  }, [searchParams]);
+
+  const loadDemo = useCallback((m: UserMode) => {
+    let bookData: BookData;
+    if (m === "financial_advisor") {
+      bookData = {
+        mode: "financial_advisor",
+        clients: FA_DEMO_CLIENTS,
+        holdings: FA_DEMO_HOLDINGS,
+        rawHeaders: [
+          "client_id", "age", "filing_status", "federal_tax_bracket",
+          "state_tax_rate", "risk_tolerance", "investment_objective",
+          "time_horizon", "annual_income", "liquid_net_worth",
+          "total_net_worth", "liquidity_needs",
+        ],
+        rowCount: FA_DEMO_CLIENTS.length,
+        uploadedAt: new Date().toISOString(),
+      };
+    } else {
+      bookData = {
+        mode: "accountant",
+        clients: ACCT_DEMO_CLIENTS,
+        rawHeaders: [
+          "client_id", "filing_status", "num_dependents",
+          "state_of_residence", "w2_income", "self_employment_income",
+          "business_income_loss", "rental_income_loss",
+          "capital_gains_short", "capital_gains_long", "interest_income",
+          "dividend_income_qualified", "dividend_income_ordinary",
+          "mortgage_interest", "salt_paid", "charitable_cash",
+          "estimated_tax_payments", "withholding",
+        ],
+        rowCount: ACCT_DEMO_CLIENTS.length,
+        uploadedAt: new Date().toISOString(),
+      };
+    }
+
+    setBook(bookData);
+    const a = computeAnalytics(bookData);
+    setAnalytics(a);
+    setParseResult({
+      clients: bookData.clients as unknown as Record<string, unknown>[],
+      holdings: bookData.holdings as unknown as Record<string, unknown>[] | undefined,
+      headers: bookData.rawHeaders,
+      errors: [],
+      piiWarnings: [],
+    });
+    setStep("privacy");
+  }, []);
+
+  const handleModeSelect = (m: UserMode) => {
+    setMode(m);
+    setStep("upload");
+  };
+
+  const handleParsed = useCallback(
+    (result: ParseResult) => {
+      setParseResult(result);
+      if (result.errors.length > 0) return;
+
+      const bookData: BookData = {
+        mode: mode!,
+        clients:
+          mode === "financial_advisor"
+            ? (result.clients as unknown as FAClientRecord[])
+            : (result.clients as unknown as AcctClientRecord[]),
+        holdings:
+          mode === "financial_advisor"
+            ? (result.holdings as unknown as FAHolding[] | undefined)
+            : undefined,
+        rawHeaders: result.headers,
+        rowCount: result.clients.length,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      setBook(bookData);
+      const a = computeAnalytics(bookData);
+      setAnalytics(a);
+      setStep("privacy");
+    },
+    [mode]
+  );
+
+  const handlePrivacyConfirm = useCallback(() => {
+    if (book && analytics) {
+      const prompt = buildSystemPrompt(book, analytics);
+      setSystemPrompt(prompt);
+      setStep("chat");
+    }
+  }, [book, analytics]);
+
+  const handleClientClick = useCallback((clientId: string) => {
+    const chatInterface = document.querySelector("textarea");
+    if (chatInterface) {
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value"
+      )?.set;
+      nativeInputValueSetter?.call(
+        chatInterface,
+        `Tell me about ${clientId} — give me a complete overview`
+      );
+      chatInterface.dispatchEvent(new Event("input", { bubbles: true }));
+      chatInterface.focus();
+    }
+  }, []);
+
+  const faFilters = [
+    { key: "concentration", label: "High Concentration" },
+    { key: "harvesting", label: "Tax Harvesting" },
+    { key: "roth", label: "Roth Candidates" },
+    { key: "retirement", label: "Near Retirement" },
+  ];
+
+  const acctFilters = [
+    { key: "amt", label: "AMT Risk" },
+    { key: "salt", label: "High SALT" },
+    { key: "bunching", label: "Bunching Candidates" },
+    { key: "underpayment", label: "Underpayment Risk" },
+  ];
+
+  if (step === "mode") {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center px-6">
+          <div className="max-w-3xl w-full space-y-8 animate-fade-in">
+            <div className="text-center space-y-2">
+              <h1 className="font-heading text-3xl font-bold">
+                Select Your Mode
+              </h1>
+              <p className="text-text-secondary">
+                This determines the expected data schema and AI analysis focus.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ModeCard
+                title="Financial Advisor"
+                desc="Portfolio data, holdings, risk profiles, tax brackets, account types"
+                icon={
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                  </svg>
+                }
+                onClick={() => handleModeSelect("financial_advisor")}
+              />
+              <ModeCard
+                title="Accountant"
+                desc="Income sources, deductions, credits, tax planning data, filing status"
+                icon={
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                }
+                onClick={() => handleModeSelect("accountant")}
+              />
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (step === "upload" && mode) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header onBack={() => setStep("mode")} />
+        <main className="flex-1 flex items-center justify-center px-6 py-12">
+          <div className="max-w-2xl w-full space-y-6">
+            <div className="text-center space-y-2">
+              <h1 className="font-heading text-3xl font-bold">
+                Upload Your{" "}
+                {mode === "financial_advisor" ? "Client Book" : "Tax Data"}
+              </h1>
+              <p className="text-text-secondary">
+                CSV or Excel file with anonymized client data. No names, no
+                SSNs.
+              </p>
+            </div>
+            <UploadPanel
+              mode={mode}
+              onParsed={handleParsed}
+              onLoadDemo={() => loadDemo(mode)}
+            />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (step === "privacy" && parseResult) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header onBack={() => setStep("upload")} />
+        <main className="flex-1 flex items-center justify-center px-6 py-12">
+          <PrivacyGate
+            headers={parseResult.headers}
+            piiWarnings={parseResult.piiWarnings}
+            clientCount={parseResult.clients.length}
+            onConfirm={handlePrivacyConfirm}
+            onBack={() => setStep("upload")}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  if (step === "chat" && book && analytics && mode) {
+    const filters = mode === "financial_advisor" ? faFilters : acctFilters;
+    return (
+      <div className="h-screen flex flex-col">
+        <Header minimal />
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left sidebar */}
+          <div className="w-[360px] shrink-0 border-r border-border bg-sidebar overflow-y-auto p-4 space-y-6">
+            <BookSummary analytics={analytics} />
+
+            <ClientTable
+              book={book}
+              onClientClick={handleClientClick}
+              activeFilter={activeFilter}
+            />
+
+            <div className="space-y-2">
+              <p className="text-xs text-text-muted font-medium uppercase tracking-wider">
+                Quick Filters
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {filters.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() =>
+                      setActiveFilter((prev) =>
+                        prev === f.key ? null : f.key
+                      )
+                    }
+                    className={`px-2.5 py-1.5 text-xs rounded-lg border transition-all ${
+                      activeFilter === f.key
+                        ? "bg-accent-dim border-accent/40 text-accent"
+                        : "bg-surface border-border text-text-secondary hover:border-border-active hover:text-text"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Main chat panel */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <ChatInterface systemPrompt={systemPrompt} mode={mode} />
+          </div>
+        </div>
+
+        {/* Privacy footer */}
+        <div className="border-t border-border bg-sidebar px-6 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-success-dim text-success border border-success/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />
+              No PII in context
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface border border-border text-text-secondary">
+              Client IDs only
+            </span>
+            <span className="text-text-muted font-mono">
+              {book.rowCount} clients loaded
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-text-muted font-mono">Claude Sonnet 4</span>
+            <button
+              onClick={() => setPrivacyModalOpen(true)}
+              className="text-text-muted hover:text-text-secondary transition-colors underline underline-offset-2"
+            >
+              How we protect your data
+            </button>
+          </div>
+        </div>
+
+        {/* Privacy modal */}
+        {privacyModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-sidebar border border-border rounded-2xl p-8 max-w-lg w-full mx-6 space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <h3 className="font-heading font-bold text-lg">
+                  Privacy Architecture
+                </h3>
+                <button
+                  onClick={() => setPrivacyModalOpen(false)}
+                  className="text-text-muted hover:text-text transition-colors"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <div className="space-y-3 text-sm text-text-secondary leading-relaxed">
+                <p>
+                  <strong className="text-text">No PII enters the AI.</strong>{" "}
+                  Your client data is uploaded with Client IDs only — no names,
+                  no Social Security numbers, no addresses, no email addresses.
+                </p>
+                <p>
+                  <strong className="text-text">
+                    You control what data is sent.
+                  </strong>{" "}
+                  The Privacy Review screen shows you exactly which columns
+                  enter the AI context. Any detected PII triggers a warning.
+                </p>
+                <p>
+                  <strong className="text-text">
+                    No data is stored.
+                  </strong>{" "}
+                  Everything is session-based. When you close the tab, the data
+                  is gone. There are no databases, no file storage, no user
+                  accounts.
+                </p>
+                <p>
+                  <strong className="text-text">
+                    You map IDs back on your end.
+                  </strong>{" "}
+                  The AI only knows Client IDs like C-1001. You maintain the
+                  mapping to real client names in your own systems.
+                </p>
+              </div>
+              <button
+                onClick={() => setPrivacyModalOpen(false)}
+                className="w-full py-2.5 bg-accent text-white font-heading font-bold text-sm rounded-lg hover:bg-accent/90 transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function Header({
+  onBack,
+  minimal,
+}: {
+  onBack?: () => void;
+  minimal?: boolean;
+}) {
+  return (
+    <header
+      className={`flex items-center justify-between px-6 border-b border-border ${minimal ? "py-2.5" : "py-4"}`}
+    >
+      <div className="flex items-center gap-3">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
+              />
+            </svg>
+          </button>
+        )}
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-xs text-white">
+            K
+          </div>
+          <span className="font-heading font-bold text-sm tracking-tight">
+            KAHF Capital
+          </span>
+          {!minimal && (
+            <span className="text-text-muted text-xs ml-1">
+              Book Review Intelligence
+            </span>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function ModeCard({
+  title,
+  desc,
+  icon,
+  onClick,
+}: {
+  title: string;
+  desc: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group text-left p-8 bg-surface border border-border rounded-2xl hover:border-accent/40 hover:bg-accent-dim transition-all space-y-4"
+    >
+      <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-text-secondary group-hover:text-accent transition-colors">
+        {icon}
+      </div>
+      <div>
+        <h3 className="font-heading font-bold text-xl mb-2 group-hover:text-accent transition-colors">
+          {title}
+        </h3>
+        <p className="text-text-secondary text-sm leading-relaxed">{desc}</p>
+      </div>
+      <div className="pt-2">
+        <span className="text-accent text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+          Select →
+        </span>
+      </div>
+    </button>
+  );
+}
+
+export default function ReviewPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <ReviewContent />
+    </Suspense>
+  );
+}
