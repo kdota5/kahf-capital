@@ -135,14 +135,14 @@ export default function ChatInterface({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 space-y-4">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-6 py-12">
+          <div className="flex flex-col items-center justify-center h-full text-center space-y-6 py-8 sm:py-12 px-2">
             <div className="space-y-2">
-              <h2 className="font-heading text-2xl font-bold text-text">
+              <h2 className="font-heading text-xl sm:text-2xl font-bold text-text">
                 Your book is loaded
               </h2>
-              <p className="text-text-secondary max-w-md">
+              <p className="text-text-secondary text-sm sm:text-base max-w-md">
                 Ask anything about your clients. Cross-reference portfolios,
                 identify opportunities, flag risks — across your entire book.
               </p>
@@ -156,7 +156,7 @@ export default function ChatInterface({
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}
           >
             <div
-              className={`max-w-[85%] rounded-xl px-4 py-3 ${
+              className={`max-w-[95%] sm:max-w-[85%] rounded-xl px-3 sm:px-4 py-3 ${
                 msg.role === "user"
                   ? "bg-accent/15 border border-accent/20 text-text"
                   : "bg-surface border border-border text-text"
@@ -190,7 +190,7 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-border px-6 py-4 space-y-3">
+      <div className="border-t border-border px-3 sm:px-6 py-3 sm:py-4 space-y-3">
         {showSuggestions && (
           <SuggestedQueries
             mode={mode}
@@ -198,7 +198,7 @@ export default function ChatInterface({
             compact
           />
         )}
-        <div className="flex gap-3">
+        <div className="flex gap-2 sm:gap-3">
           <textarea
             ref={inputRef}
             value={input}
@@ -206,7 +206,7 @@ export default function ChatInterface({
             onKeyDown={handleKeyDown}
             placeholder="Ask about your book..."
             rows={1}
-            className="flex-1 bg-bg border border-border rounded-xl px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none resize-none"
+            className="flex-1 bg-bg border border-border rounded-xl px-3 sm:px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-accent focus:outline-none resize-none"
             style={{
               minHeight: "44px",
               maxHeight: "120px",
@@ -221,7 +221,7 @@ export default function ChatInterface({
           <button
             onClick={() => sendMessage(input)}
             disabled={!input.trim() || streaming}
-            className={`px-5 py-3 rounded-xl font-heading font-bold text-sm transition-all ${
+            className={`px-4 sm:px-5 py-3 rounded-xl font-heading font-bold text-sm transition-all shrink-0 ${
               input.trim() && !streaming
                 ? "bg-accent text-white hover:bg-accent/90 shadow-lg shadow-accent/20"
                 : "bg-surface-hover text-text-muted cursor-not-allowed"

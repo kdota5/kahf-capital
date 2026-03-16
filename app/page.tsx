@@ -5,7 +5,7 @@ import Link from "next/link";
 export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col">
-      <nav className="flex items-center justify-between px-8 py-5 border-b border-border">
+      <nav className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 border-b border-border">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-sm text-white">
             K
@@ -22,20 +22,20 @@ export default function LandingPage() {
         </Link>
       </nav>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-6">
-        <div className="max-w-3xl text-center space-y-8 animate-fade-in">
+      <main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-12 sm:py-0">
+        <div className="max-w-3xl text-center space-y-6 sm:space-y-8 animate-fade-in">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent-dim border border-accent/20 text-accent text-sm font-medium">
             <span className="w-2 h-2 rounded-full bg-accent animate-pulse-dot" />
             Privacy-First AI Intelligence
           </div>
 
-          <h1 className="font-heading text-5xl md:text-6xl font-extrabold leading-tight tracking-tight">
+          <h1 className="font-heading text-3xl sm:text-5xl md:text-6xl font-extrabold leading-tight tracking-tight">
             Your entire book.
             <br />
             <span className="text-accent">One conversation.</span>
           </h1>
 
-          <p className="text-text-secondary text-lg md:text-xl leading-relaxed max-w-2xl mx-auto">
+          <p className="text-text-secondary text-base sm:text-lg md:text-xl leading-relaxed max-w-2xl mx-auto">
             Upload your client book — no names, no SSNs, just anonymized data —
             and have an open-ended conversation with a senior analyst who has
             memorized every portfolio, tax situation, and risk profile.
@@ -56,7 +56,7 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 pt-8 sm:pt-12">
             {[
               {
                 title: "Financial Advisors",
@@ -87,7 +87,7 @@ export default function LandingPage() {
         </div>
       </main>
 
-      <footer className="px-8 py-5 border-t border-border text-center text-text-muted text-sm">
+      <footer className="px-4 sm:px-8 py-4 sm:py-5 border-t border-border text-center text-text-muted text-xs sm:text-sm">
         No data is stored. No accounts required. Everything is session-based and
         ephemeral.
       </footer>

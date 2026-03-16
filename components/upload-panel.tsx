@@ -152,7 +152,7 @@ export default function UploadPanel({
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         onClick={() => fileRef.current?.click()}
-        className={`relative border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
+        className={`relative border-2 border-dashed rounded-xl p-8 sm:p-12 text-center cursor-pointer transition-all ${
           dragging
             ? "border-accent bg-accent-dim"
             : "border-border hover:border-border-active"
@@ -238,7 +238,7 @@ export default function UploadPanel({
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <button
           onClick={downloadTemplate}
           className="px-4 py-2.5 text-sm bg-surface border border-border rounded-lg hover:border-border-active text-text-secondary hover:text-text transition-all"

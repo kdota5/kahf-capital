@@ -36,7 +36,7 @@ export default function SuggestedQueries({
   compact,
 }: SuggestedQueriesProps) {
   const suggestions = mode === "financial_advisor" ? FA_SUGGESTIONS : ACCT_SUGGESTIONS;
-  const displayed = compact ? suggestions.slice(0, 4) : suggestions;
+  const displayed = compact ? suggestions.slice(0, 3) : suggestions;
 
   return (
     <div className={compact ? "flex flex-wrap gap-2" : "space-y-3"}>
@@ -50,7 +50,7 @@ export default function SuggestedQueries({
           <button
             key={q}
             onClick={() => onSelect(q)}
-            className="text-left px-3 py-2 text-sm bg-surface border border-border rounded-lg hover:border-accent/40 hover:bg-accent-dim text-text-secondary hover:text-text transition-all"
+            className="text-left px-3 py-2 text-xs sm:text-sm bg-surface border border-border rounded-lg hover:border-accent/40 hover:bg-accent-dim text-text-secondary hover:text-text transition-all"
           >
             {q}
           </button>

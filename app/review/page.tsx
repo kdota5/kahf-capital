@@ -37,6 +37,7 @@ function ReviewContent() {
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const demo = searchParams.get("demo");
@@ -171,10 +172,10 @@ function ReviewContent() {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
-        <main className="flex-1 flex items-center justify-center px-6">
-          <div className="max-w-3xl w-full space-y-8 animate-fade-in">
+        <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-12 sm:py-0">
+          <div className="max-w-3xl w-full space-y-6 sm:space-y-8 animate-fade-in">
             <div className="text-center space-y-2">
-              <h1 className="font-heading text-3xl font-bold">
+              <h1 className="font-heading text-2xl sm:text-3xl font-bold">
                 Select Your Mode
               </h1>
               <p className="text-text-secondary">
@@ -213,10 +214,10 @@ function ReviewContent() {
     return (
       <div className="min-h-screen flex flex-col">
         <Header onBack={() => setStep("mode")} />
-        <main className="flex-1 flex items-center justify-center px-6 py-12">
+        <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
           <div className="max-w-2xl w-full space-y-6">
             <div className="text-center space-y-2">
-              <h1 className="font-heading text-3xl font-bold">
+              <h1 className="font-heading text-2xl sm:text-3xl font-bold">
                 Upload Your{" "}
                 {mode === "financial_advisor" ? "Client Book" : "Tax Data"}
               </h1>
@@ -240,7 +241,7 @@ function ReviewContent() {
     return (
       <div className="min-h-screen flex flex-col">
         <Header onBack={() => setStep("upload")} />
-        <main className="flex-1 flex items-center justify-center px-6 py-12">
+        <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
           <PrivacyGate
             headers={parseResult.headers}
             piiWarnings={parseResult.piiWarnings}
@@ -255,44 +256,78 @@ function ReviewContent() {
 
   if (step === "chat" && book && analytics && mode) {
     const filters = mode === "financial_advisor" ? faFilters : acctFilters;
+
+    const sidebarContent = (
+      <>
+        <BookSummary analytics={analytics} />
+        <ClientTable
+          book={book}
+          onClientClick={(id) => {
+            handleClientClick(id);
+            setSidebarOpen(false);
+          }}
+          activeFilter={activeFilter}
+        />
+        <div className="space-y-2">
+          <p className="text-xs text-text-muted font-medium uppercase tracking-wider">
+            Quick Filters
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {filters.map((f) => (
+              <button
+                key={f.key}
+                onClick={() =>
+                  setActiveFilter((prev) =>
+                    prev === f.key ? null : f.key
+                  )
+                }
+                className={`px-2.5 py-1.5 text-xs rounded-lg border transition-all ${
+                  activeFilter === f.key
+                    ? "bg-accent-dim border-accent/40 text-accent"
+                    : "bg-surface border-border text-text-secondary hover:border-border-active hover:text-text"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </>
+    );
+
     return (
-      <div className="h-screen flex flex-col">
-        <Header minimal />
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left sidebar */}
-          <div className="w-[360px] shrink-0 border-r border-border bg-sidebar overflow-y-auto p-4 space-y-6">
-            <BookSummary analytics={analytics} />
-
-            <ClientTable
-              book={book}
-              onClientClick={handleClientClick}
-              activeFilter={activeFilter}
+      <div className="h-[100dvh] flex flex-col">
+        <Header minimal onToggleSidebar={() => setSidebarOpen((o) => !o)} showSidebarToggle />
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Mobile sidebar overlay */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+              onClick={() => setSidebarOpen(false)}
             />
+          )}
 
-            <div className="space-y-2">
-              <p className="text-xs text-text-muted font-medium uppercase tracking-wider">
-                Quick Filters
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {filters.map((f) => (
-                  <button
-                    key={f.key}
-                    onClick={() =>
-                      setActiveFilter((prev) =>
-                        prev === f.key ? null : f.key
-                      )
-                    }
-                    className={`px-2.5 py-1.5 text-xs rounded-lg border transition-all ${
-                      activeFilter === f.key
-                        ? "bg-accent-dim border-accent/40 text-accent"
-                        : "bg-surface border-border text-text-secondary hover:border-border-active hover:text-text"
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
+          {/* Sidebar — fixed drawer on mobile, static on desktop */}
+          <div
+            className={`
+              fixed inset-y-0 left-0 z-40 w-[320px] sm:w-[360px] bg-sidebar border-r border-border overflow-y-auto p-4 space-y-6
+              transform transition-transform duration-300 ease-in-out
+              lg:relative lg:translate-x-0 lg:z-auto
+              ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+            `}
+          >
+            <div className="flex items-center justify-between lg:hidden mb-2">
+              <span className="font-heading font-bold text-sm">Book Data</span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-surface text-text-secondary hover:text-text transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
+            {sidebarContent}
           </div>
 
           {/* Main chat panel */}
@@ -302,26 +337,28 @@ function ReviewContent() {
         </div>
 
         {/* Privacy footer */}
-        <div className="border-t border-border bg-sidebar px-6 py-2.5 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-success-dim text-success border border-success/20">
+        <div className="border-t border-border bg-sidebar px-3 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto">
+            <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-success-dim text-success border border-success/20 whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-success" />
-              No PII in context
+              <span className="hidden sm:inline">No PII in context</span>
+              <span className="sm:hidden">No PII</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface border border-border text-text-secondary">
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface border border-border text-text-secondary whitespace-nowrap">
               Client IDs only
             </span>
-            <span className="text-text-muted font-mono">
-              {book.rowCount} clients loaded
+            <span className="text-text-muted font-mono whitespace-nowrap">
+              {book.rowCount} clients
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-text-muted font-mono">Claude Sonnet 4</span>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <span className="text-text-muted font-mono hidden sm:inline">Claude Sonnet 4</span>
             <button
               onClick={() => setPrivacyModalOpen(true)}
-              className="text-text-muted hover:text-text-secondary transition-colors underline underline-offset-2"
+              className="text-text-muted hover:text-text-secondary transition-colors underline underline-offset-2 whitespace-nowrap"
             >
-              How we protect your data
+              <span className="hidden sm:inline">How we protect your data</span>
+              <span className="sm:hidden">Privacy</span>
             </button>
           </div>
         </div>
@@ -401,15 +438,29 @@ function ReviewContent() {
 function Header({
   onBack,
   minimal,
+  onToggleSidebar,
+  showSidebarToggle,
 }: {
   onBack?: () => void;
   minimal?: boolean;
+  onToggleSidebar?: () => void;
+  showSidebarToggle?: boolean;
 }) {
   return (
     <header
-      className={`flex items-center justify-between px-6 border-b border-border ${minimal ? "py-2.5" : "py-4"}`}
+      className={`flex items-center justify-between px-4 sm:px-6 border-b border-border ${minimal ? "py-2.5" : "py-4"}`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {showSidebarToggle && (
+          <button
+            onClick={onToggleSidebar}
+            className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text lg:hidden"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
+        )}
         {onBack && (
           <button
             onClick={onBack}
@@ -430,7 +481,7 @@ function Header({
             </svg>
           </button>
         )}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-xs text-white">
             K
           </div>
@@ -438,7 +489,7 @@ function Header({
             KAHF Capital
           </span>
           {!minimal && (
-            <span className="text-text-muted text-xs ml-1">
+            <span className="text-text-muted text-xs ml-1 hidden sm:inline">
               Book Review Intelligence
             </span>
           )}
@@ -462,7 +513,7 @@ function ModeCard({
   return (
     <button
       onClick={onClick}
-      className="group text-left p-8 bg-surface border border-border rounded-2xl hover:border-accent/40 hover:bg-accent-dim transition-all space-y-4"
+      className="group text-left p-6 sm:p-8 bg-surface border border-border rounded-2xl hover:border-accent/40 hover:bg-accent-dim transition-all space-y-4"
     >
       <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-text-secondary group-hover:text-accent transition-colors">
         {icon}
