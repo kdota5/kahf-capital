@@ -11,9 +11,18 @@ import type {
   FAClientRecord,
   FAHolding,
   AcctClientRecord,
+  ChatMessage,
 } from "@/lib/types";
 import { computeAnalytics } from "@/lib/analytics";
 import { buildSystemPrompt } from "@/lib/system-prompt";
+import {
+  extractClientReferences,
+  buildReportContent,
+  type ExtractedClientRef,
+  type ClientNameMap,
+  type ReportSection,
+} from "@/lib/report-engine";
+import { loadClientMap } from "@/lib/client-map-store";
 import {
   FA_DEMO_CLIENTS,
   FA_DEMO_HOLDINGS,
@@ -24,8 +33,10 @@ import PrivacyGate from "@/components/privacy-gate";
 import BookSummary from "@/components/book-summary";
 import ClientTable from "@/components/client-table";
 import ChatInterface from "@/components/chat-interface";
+import ClientMapper from "@/components/client-mapper";
+import ReportBuilder from "@/components/report-builder";
 
-type Step = "mode" | "upload" | "privacy" | "chat";
+type Step = "mode" | "upload" | "privacy" | "chat" | "client_mapping" | "report_preview";
 
 function ReviewContent() {
   const searchParams = useSearchParams();
@@ -38,6 +49,10 @@ function ReviewContent() {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [extractedClients, setExtractedClients] = useState<ExtractedClientRef[]>([]);
+  const [clientNameMap, setClientNameMap] = useState<ClientNameMap>({});
+  const [reportSections, setReportSections] = useState<ReportSection[]>([]);
 
   useEffect(() => {
     const demo = searchParams.get("demo");
@@ -137,6 +152,41 @@ function ReviewContent() {
       setStep("chat");
     }
   }, [book, analytics]);
+
+  const handleGenerateReport = useCallback(
+    (messages: ChatMessage[]) => {
+      setChatMessages(messages);
+      const extracted = extractClientReferences(messages);
+      setExtractedClients(extracted);
+
+      const allIds = (book?.clients || []).map(
+        (c: any) => c.client_id as string
+      );
+      const stored = loadClientMap(allIds);
+      if (stored) {
+        setClientNameMap((prev) => ({ ...stored, ...prev }));
+      }
+
+      setStep("client_mapping");
+    },
+    [book]
+  );
+
+  const handleMapperGenerate = useCallback(
+    (map: ClientNameMap) => {
+      setClientNameMap(map);
+      const sections = buildReportContent(chatMessages, map);
+      setReportSections(sections);
+      setStep("report_preview");
+    },
+    [chatMessages]
+  );
+
+  const handleMapperSkip = useCallback(() => {
+    const sections = buildReportContent(chatMessages, {});
+    setReportSections(sections);
+    setStep("report_preview");
+  }, [chatMessages]);
 
   const handleClientClick = useCallback((clientId: string) => {
     const chatInterface = document.querySelector("textarea");
@@ -267,6 +317,7 @@ function ReviewContent() {
             setSidebarOpen(false);
           }}
           activeFilter={activeFilter}
+          clientNameMap={Object.keys(clientNameMap).length > 0 ? clientNameMap : undefined}
         />
         <div className="space-y-2">
           <p className="text-xs text-text-muted font-medium uppercase tracking-wider">
@@ -332,7 +383,11 @@ function ReviewContent() {
 
           {/* Main chat panel */}
           <div className="flex-1 flex flex-col min-w-0">
-            <ChatInterface systemPrompt={systemPrompt} mode={mode} />
+            <ChatInterface
+              systemPrompt={systemPrompt}
+              mode={mode}
+              onGenerateReport={handleGenerateReport}
+            />
           </div>
         </div>
 
@@ -428,6 +483,41 @@ function ReviewContent() {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (step === "client_mapping" && book) {
+    const allIds = (book.clients as any[]).map(
+      (c: any) => c.client_id as string
+    );
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header onBack={() => setStep("chat")} />
+        <main className="flex-1 px-4 sm:px-6 py-8 sm:py-12">
+          <ClientMapper
+            extractedClients={extractedClients}
+            allClientIds={allIds}
+            onGenerate={handleMapperGenerate}
+            onSkip={handleMapperSkip}
+            onBack={() => setStep("chat")}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  if (step === "report_preview" && book && mode) {
+    return (
+      <div className="h-[100dvh] flex flex-col">
+        <ReportBuilder
+          sections={reportSections}
+          clientMap={clientNameMap}
+          book={book}
+          onBack={() => setStep("report_preview")}
+          onEditNames={() => setStep("client_mapping")}
+          onBackToChat={() => setStep("chat")}
+        />
       </div>
     );
   }

@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.0",
     "next": "^14.2.29",
     "papaparse": "^5.5.3",
     "pptxgenjs": "^3.12.0",

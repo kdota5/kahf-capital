@@ -7,11 +7,13 @@ import type {
   FAHolding,
   AcctClientRecord,
 } from "@/lib/types";
+import type { ClientNameMap } from "@/lib/report-engine";
 
 interface ClientTableProps {
   book: BookData;
   onClientClick: (clientId: string) => void;
   activeFilter?: string | null;
+  clientNameMap?: ClientNameMap;
 }
 
 type SortKey = string;
@@ -21,6 +23,7 @@ export default function ClientTable({
   book,
   onClientClick,
   activeFilter,
+  clientNameMap,
 }: ClientTableProps) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("client_id");
@@ -47,6 +50,7 @@ export default function ClientTable({
         onSort={handleSort}
         onClientClick={onClientClick}
         activeFilter={activeFilter}
+        clientNameMap={clientNameMap}
       />
     );
   }
@@ -61,6 +65,7 @@ export default function ClientTable({
       onSort={handleSort}
       onClientClick={onClientClick}
       activeFilter={activeFilter}
+      clientNameMap={clientNameMap}
     />
   );
 }
@@ -75,6 +80,7 @@ interface FATableProps {
   onSort: (key: SortKey) => void;
   onClientClick: (id: string) => void;
   activeFilter?: string | null;
+  clientNameMap?: ClientNameMap;
 }
 
 function FATable({
@@ -87,6 +93,7 @@ function FATable({
   onSort,
   onClientClick,
   activeFilter,
+  clientNameMap,
 }: FATableProps) {
   const clientAUM = useMemo(() => {
     const map: Record<string, number> = {};
@@ -189,50 +196,63 @@ function FATable({
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-surface-hover z-10">
             <tr>
-              {[
-                { key: "client_id", label: "ID" },
-                { key: "age", label: "Age" },
-                { key: "risk_tolerance", label: "Risk" },
-                { key: "aum", label: "AUM" },
-              ].map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => onSort(col.key)}
-                  className="px-2 py-2 text-left text-text-muted font-medium cursor-pointer hover:text-text transition-colors"
-                >
-                  {col.label}
-                  {sortKey === col.key && (
-                    <span className="ml-1">
-                      {sortDir === "asc" ? "↑" : "↓"}
-                    </span>
-                  )}
-                </th>
-              ))}
+              <th
+                onClick={() => onSort("client_id")}
+                className="px-2 py-2 text-left text-text-muted font-medium cursor-pointer hover:text-text transition-colors"
+              >
+                ID{sortKey === "client_id" && <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>}
+              </th>
+              <th
+                onClick={() => onSort("age")}
+                className="px-2 py-2 text-left text-text-muted font-medium cursor-pointer hover:text-text transition-colors"
+              >
+                Age{sortKey === "age" && <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>}
+              </th>
+              <th
+                onClick={() => onSort("risk_tolerance")}
+                className="px-2 py-2 text-left text-text-muted font-medium cursor-pointer hover:text-text transition-colors"
+              >
+                Risk{sortKey === "risk_tolerance" && <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>}
+              </th>
+              <th
+                onClick={() => onSort("aum")}
+                className="px-2 py-2 text-left text-text-muted font-medium cursor-pointer hover:text-text transition-colors"
+              >
+                AUM{sortKey === "aum" && <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((c) => (
-              <tr
-                key={c.client_id}
-                onClick={() => onClientClick(c.client_id)}
-                className="border-t border-border hover:bg-surface-hover cursor-pointer transition-colors"
-              >
-                <td className="px-2 py-2 font-mono text-accent">
-                  {c.client_id}
-                </td>
-                <td className="px-2 py-2 text-text-secondary">{c.age}</td>
-                <td className="px-2 py-2">
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${riskColor[c.risk_tolerance] || ""}`}
-                  >
-                    {c.risk_tolerance.replace("Moderate Aggressive", "Mod Agg")}
-                  </span>
-                </td>
-                <td className="px-2 py-2 font-mono text-text-secondary">
-                  {formatCompact(clientAUM[c.client_id] || 0)}
-                </td>
-              </tr>
-            ))}
+            {filtered.map((c) => {
+              const mappedName = clientNameMap?.[c.client_id];
+              return (
+                <tr
+                  key={c.client_id}
+                  onClick={() => onClientClick(c.client_id)}
+                  className="border-t border-border hover:bg-surface-hover cursor-pointer transition-colors"
+                >
+                  <td className="px-2 py-2">
+                    <span className="font-mono text-accent text-xs">{c.client_id}</span>
+                    {mappedName && (
+                      <span className="block text-[10px] text-text-secondary truncate max-w-[80px]">
+                        {mappedName}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-text-secondary">{c.age}</td>
+                  <td className="px-2 py-2">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${riskColor[c.risk_tolerance] || ""}`}
+                    >
+                      {c.risk_tolerance.replace("Moderate Aggressive", "Mod Agg")}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 font-mono text-text-secondary">
+                    {formatCompact(clientAUM[c.client_id] || 0)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -249,6 +269,7 @@ interface AcctTableProps {
   onSort: (key: SortKey) => void;
   onClientClick: (id: string) => void;
   activeFilter?: string | null;
+  clientNameMap?: ClientNameMap;
 }
 
 function AcctTable({
@@ -260,6 +281,7 @@ function AcctTable({
   onSort,
   onClientClick,
   activeFilter,
+  clientNameMap,
 }: AcctTableProps) {
   const filtered = useMemo(() => {
     let list = clients.filter(
@@ -373,30 +395,38 @@ function AcctTable({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((c) => (
-              <tr
-                key={c.client_id}
-                onClick={() => onClientClick(c.client_id)}
-                className="border-t border-border hover:bg-surface-hover cursor-pointer transition-colors"
-              >
-                <td className="px-2 py-2 font-mono text-accent">
-                  {c.client_id}
-                </td>
-                <td className="px-2 py-2">
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${filingColor[c.filing_status] || ""}`}
-                  >
-                    {c.filing_status}
-                  </span>
-                </td>
-                <td className="px-2 py-2 font-mono text-text-secondary">
-                  {c.state_of_residence}
-                </td>
-                <td className="px-2 py-2 font-mono text-text-secondary">
-                  {formatCompact(c.w2_income)}
-                </td>
-              </tr>
-            ))}
+            {filtered.map((c) => {
+              const mappedName = clientNameMap?.[c.client_id];
+              return (
+                <tr
+                  key={c.client_id}
+                  onClick={() => onClientClick(c.client_id)}
+                  className="border-t border-border hover:bg-surface-hover cursor-pointer transition-colors"
+                >
+                  <td className="px-2 py-2">
+                    <span className="font-mono text-accent text-xs">{c.client_id}</span>
+                    {mappedName && (
+                      <span className="block text-[10px] text-text-secondary truncate max-w-[80px]">
+                        {mappedName}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${filingColor[c.filing_status] || ""}`}
+                    >
+                      {c.filing_status}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 font-mono text-text-secondary">
+                    {c.state_of_residence}
+                  </td>
+                  <td className="px-2 py-2 font-mono text-text-secondary">
+                    {formatCompact(c.w2_income)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
