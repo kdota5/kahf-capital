@@ -21,7 +21,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KAHF Capital — Book Review Intelligence",
+  title: "Conda — Book Review Intelligence",
   description:
     "Privacy-first AI book review intelligence for financial advisors and accountants",
 };

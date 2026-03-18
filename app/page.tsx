@@ -8,10 +8,10 @@ export default function LandingPage() {
       <nav className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 border-b border-border">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-sm text-white">
-            K
+            C
           </div>
           <span className="font-heading font-bold text-lg tracking-tight">
-            KAHF Capital
+            Conda
           </span>
         </div>
         <Link

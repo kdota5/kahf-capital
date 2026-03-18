@@ -1,4 +1,4 @@
-import type { FAClientRecord, FAHolding, AcctClientRecord } from "./types";
+import type { FAClientRecord, FAHolding, AcctClientRecord, ClientDirectoryEntry } from "./types";
 
 export const FA_DEMO_CLIENTS: FAClientRecord[] = [
   {
@@ -461,4 +461,28 @@ export const ACCT_DEMO_CLIENTS: AcctClientRecord[] = [
     prior_year_overpayment: 1200,
     notes: "Straightforward dual-income household. Standard W-2 employment. Itemized deductions are close to standard deduction — worth evaluating.",
   },
+];
+
+// ── Demo Client Directories ──
+
+export const FA_DEMO_DIRECTORY: ClientDirectoryEntry[] = [
+  { client_id: "C-1001", full_name: "James Morrison", email: "james@morrisonwealth.com", phone: "212-555-0142", company: "Morrison & Associates" },
+  { client_id: "C-1002", full_name: "Linda Zhao", email: "linda.zhao@gmail.com", phone: "212-555-0298", company: "Zhao Family Trust" },
+  { client_id: "C-1003", full_name: "Sarah Chen", email: "sarah@chencapital.com", phone: "646-555-0187", company: "Chen Capital LLC" },
+  { client_id: "C-1004", full_name: "Michael Torres", email: "m.torres@torresgroup.net", phone: "917-555-0334", company: "Torres Investment Group" },
+  { client_id: "C-1005", full_name: "Robert Kim", email: "robert.kim@kimlegal.com", phone: "212-555-0456", company: "Kim & Park LLP" },
+  { client_id: "C-1006", full_name: "Patricia Okafor", email: "p.okafor@okaforenterprises.com", phone: "347-555-0512", company: "Okafor Enterprises" },
+  { client_id: "C-1007", full_name: "David Nakamura", email: "david@nakamuraventures.com", phone: "646-555-0623", company: "Nakamura Ventures" },
+  { client_id: "C-1008", full_name: "Elena Vasquez", email: "elena.vasquez@vasquezmd.com", phone: "917-555-0789", company: "Vasquez Medical Group" },
+];
+
+export const ACCT_DEMO_DIRECTORY: ClientDirectoryEntry[] = [
+  { client_id: "C-2001", full_name: "Richard Huang", email: "rhuang@huangtech.com", phone: "415-555-0101", company: "Huang Technologies" },
+  { client_id: "C-2002", full_name: "Margaret Sullivan", email: "msullivan@sullivanlaw.com", phone: "212-555-0202", company: "Sullivan & Associates" },
+  { client_id: "C-2003", full_name: "Carlos Mendez", email: "carlos@mendezadvisors.com", phone: "512-555-0303", company: "Mendez Consulting" },
+  { client_id: "C-2004", full_name: "Jennifer Walsh", email: "jwalsh@walshfamily.net", phone: "305-555-0404", company: "Walsh Family Office" },
+  { client_id: "C-2005", full_name: "Alexander Petrov", email: "apetrov@petrovventures.com", phone: "206-555-0505", company: "Petrov Ventures" },
+  { client_id: "C-2006", full_name: "Priya Sharma", email: "priya@sharmapartners.com", phone: "201-555-0606", company: "Sharma & Partners" },
+  { client_id: "C-2007", full_name: "Thomas Bradley", email: "tbradley@bradleygroup.com", phone: "617-555-0707", company: "Bradley Capital Group" },
+  { client_id: "C-2008", full_name: "Nicole Foster", email: "nfoster@fosterfinancial.com", phone: "614-555-0808", company: "Foster Financial Planning" },
 ];

@@ -12,31 +12,58 @@ import type {
   FAHolding,
   AcctClientRecord,
   ChatMessage,
+  ClientDirectory,
 } from "@/lib/types";
 import { computeAnalytics } from "@/lib/analytics";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import {
-  extractClientReferences,
   buildReportContent,
-  type ExtractedClientRef,
   type ClientNameMap,
   type ReportSection,
 } from "@/lib/report-engine";
-import { loadClientMap } from "@/lib/client-map-store";
+import {
+  buildMapFromDirectory,
+  persistDirectory,
+} from "@/lib/client-map-store";
 import {
   FA_DEMO_CLIENTS,
   FA_DEMO_HOLDINGS,
   ACCT_DEMO_CLIENTS,
+  FA_DEMO_DIRECTORY,
+  ACCT_DEMO_DIRECTORY,
 } from "@/lib/demo-data";
 import UploadPanel from "@/components/upload-panel";
 import PrivacyGate from "@/components/privacy-gate";
 import BookSummary from "@/components/book-summary";
 import ClientTable from "@/components/client-table";
 import ChatInterface from "@/components/chat-interface";
-import ClientMapper from "@/components/client-mapper";
 import ReportBuilder from "@/components/report-builder";
 
-type Step = "mode" | "upload" | "privacy" | "chat" | "client_mapping" | "report_preview";
+type Step = "mode" | "upload" | "privacy" | "chat" | "report_preview";
+
+function prepareMessagesForAPI(
+  messages: ChatMessage[],
+  directory: ClientDirectory | null
+): ChatMessage[] {
+  if (!directory) return messages;
+
+  const nameVariants: { name: string; id: string }[] = [];
+  for (const entry of directory.entries) {
+    if (entry.full_name) {
+      nameVariants.push({ name: entry.full_name, id: entry.client_id });
+    }
+  }
+  nameVariants.sort((a, b) => b.name.length - a.name.length);
+
+  return messages.map((m) => {
+    let content = m.content;
+    for (const { name, id } of nameVariants) {
+      const regex = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+      content = content.replace(regex, id);
+    }
+    return { ...m, content };
+  });
+}
 
 function ReviewContent() {
   const searchParams = useSearchParams();
@@ -46,12 +73,11 @@ function ReviewContent() {
   const [analytics, setAnalytics] = useState<BookAnalytics | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string>("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [directory, setDirectory] = useState<ClientDirectory | null>(null);
+  const [clientNameMap, setClientNameMap] = useState<ClientNameMap>({});
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [extractedClients, setExtractedClients] = useState<ExtractedClientRef[]>([]);
-  const [clientNameMap, setClientNameMap] = useState<ClientNameMap>({});
   const [reportSections, setReportSections] = useState<ReportSection[]>([]);
 
   useEffect(() => {
@@ -67,6 +93,12 @@ function ReviewContent() {
 
   const loadDemo = useCallback((m: UserMode) => {
     let bookData: BookData;
+    const demoDir: ClientDirectory = {
+      entries: m === "financial_advisor" ? FA_DEMO_DIRECTORY : ACCT_DEMO_DIRECTORY,
+      headers: ["client_id", "full_name", "email", "phone", "company"],
+      loadedAt: new Date().toISOString(),
+    };
+
     if (m === "financial_advisor") {
       bookData = {
         mode: "financial_advisor",
@@ -100,6 +132,11 @@ function ReviewContent() {
     }
 
     setBook(bookData);
+    setDirectory(demoDir);
+    const nameMap = buildMapFromDirectory(demoDir);
+    setClientNameMap(nameMap);
+    persistDirectory(demoDir);
+
     const a = computeAnalytics(bookData);
     setAnalytics(a);
     setParseResult({
@@ -117,10 +154,17 @@ function ReviewContent() {
     setStep("upload");
   };
 
-  const handleParsed = useCallback(
-    (result: ParseResult) => {
+  const handleUploadComplete = useCallback(
+    (result: ParseResult, dir: ClientDirectory | null) => {
       setParseResult(result);
       if (result.errors.length > 0) return;
+
+      if (dir) {
+        setDirectory(dir);
+        const nameMap = buildMapFromDirectory(dir);
+        setClientNameMap(nameMap);
+        persistDirectory(dir);
+      }
 
       const bookData: BookData = {
         mode: mode!,
@@ -155,38 +199,12 @@ function ReviewContent() {
 
   const handleGenerateReport = useCallback(
     (messages: ChatMessage[]) => {
-      setChatMessages(messages);
-      const extracted = extractClientReferences(messages);
-      setExtractedClients(extracted);
-
-      const allIds = (book?.clients || []).map(
-        (c: any) => c.client_id as string
-      );
-      const stored = loadClientMap(allIds);
-      if (stored) {
-        setClientNameMap((prev) => ({ ...stored, ...prev }));
-      }
-
-      setStep("client_mapping");
-    },
-    [book]
-  );
-
-  const handleMapperGenerate = useCallback(
-    (map: ClientNameMap) => {
-      setClientNameMap(map);
-      const sections = buildReportContent(chatMessages, map);
+      const sections = buildReportContent(messages, clientNameMap);
       setReportSections(sections);
       setStep("report_preview");
     },
-    [chatMessages]
+    [clientNameMap]
   );
-
-  const handleMapperSkip = useCallback(() => {
-    const sections = buildReportContent(chatMessages, {});
-    setReportSections(sections);
-    setStep("report_preview");
-  }, [chatMessages]);
 
   const handleClientClick = useCallback((clientId: string) => {
     const chatInterface = document.querySelector("textarea");
@@ -218,6 +236,7 @@ function ReviewContent() {
     { key: "underpayment", label: "Underpayment Risk" },
   ];
 
+  // ── Mode Selection ──
   if (step === "mode") {
     return (
       <div className="min-h-screen flex flex-col">
@@ -260,6 +279,7 @@ function ReviewContent() {
     );
   }
 
+  // ── Upload (two-zone) ──
   if (step === "upload" && mode) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -268,17 +288,15 @@ function ReviewContent() {
           <div className="max-w-2xl w-full space-y-6">
             <div className="text-center space-y-2">
               <h1 className="font-heading text-2xl sm:text-3xl font-bold">
-                Upload Your{" "}
-                {mode === "financial_advisor" ? "Client Book" : "Tax Data"}
+                Upload Your Data
               </h1>
-              <p className="text-text-secondary">
-                CSV or Excel file with anonymized client data. No names, no
-                SSNs.
+              <p className="text-text-secondary text-sm sm:text-base">
+                Two files: a private client directory (optional) and your anonymized book data.
               </p>
             </div>
             <UploadPanel
               mode={mode}
-              onParsed={handleParsed}
+              onComplete={handleUploadComplete}
               onLoadDemo={() => loadDemo(mode)}
             />
           </div>
@@ -287,15 +305,17 @@ function ReviewContent() {
     );
   }
 
+  // ── Privacy Gate ──
   if (step === "privacy" && parseResult) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header onBack={() => setStep("upload")} />
         <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
           <PrivacyGate
-            headers={parseResult.headers}
+            bookHeaders={parseResult.headers}
             piiWarnings={parseResult.piiWarnings}
             clientCount={parseResult.clients.length}
+            directory={directory}
             onConfirm={handlePrivacyConfirm}
             onBack={() => setStep("upload")}
           />
@@ -304,8 +324,10 @@ function ReviewContent() {
     );
   }
 
+  // ── Chat ──
   if (step === "chat" && book && analytics && mode) {
     const filters = mode === "financial_advisor" ? faFilters : acctFilters;
+    const hasNames = Object.keys(clientNameMap).length > 0;
 
     const sidebarContent = (
       <>
@@ -317,7 +339,7 @@ function ReviewContent() {
             setSidebarOpen(false);
           }}
           activeFilter={activeFilter}
-          clientNameMap={Object.keys(clientNameMap).length > 0 ? clientNameMap : undefined}
+          clientNameMap={hasNames ? clientNameMap : undefined}
         />
         <div className="space-y-2">
           <p className="text-xs text-text-muted font-medium uppercase tracking-wider">
@@ -350,7 +372,6 @@ function ReviewContent() {
       <div className="h-[100dvh] flex flex-col">
         <Header minimal onToggleSidebar={() => setSidebarOpen((o) => !o)} showSidebarToggle />
         <div className="flex-1 flex overflow-hidden relative">
-          {/* Mobile sidebar overlay */}
           {sidebarOpen && (
             <div
               className="fixed inset-0 z-30 bg-black/50 lg:hidden"
@@ -358,7 +379,6 @@ function ReviewContent() {
             />
           )}
 
-          {/* Sidebar — fixed drawer on mobile, static on desktop */}
           <div
             className={`
               fixed inset-y-0 left-0 z-40 w-[320px] sm:w-[360px] bg-sidebar border-r border-border overflow-y-auto p-4 space-y-6
@@ -381,12 +401,12 @@ function ReviewContent() {
             {sidebarContent}
           </div>
 
-          {/* Main chat panel */}
           <div className="flex-1 flex flex-col min-w-0">
             <ChatInterface
               systemPrompt={systemPrompt}
               mode={mode}
               onGenerateReport={handleGenerateReport}
+              directory={directory}
             />
           </div>
         </div>
@@ -421,63 +441,22 @@ function ReviewContent() {
         {/* Privacy modal */}
         {privacyModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="bg-sidebar border border-border rounded-2xl p-8 max-w-lg w-full mx-6 space-y-4 animate-fade-in">
+            <div className="bg-sidebar border border-border rounded-2xl p-6 sm:p-8 max-w-lg w-full mx-4 sm:mx-6 space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
-                <h3 className="font-heading font-bold text-lg">
-                  Privacy Architecture
-                </h3>
-                <button
-                  onClick={() => setPrivacyModalOpen(false)}
-                  className="text-text-muted hover:text-text transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
+                <h3 className="font-heading font-bold text-lg">Privacy Architecture</h3>
+                <button onClick={() => setPrivacyModalOpen(false)} className="text-text-muted hover:text-text transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
               <div className="space-y-3 text-sm text-text-secondary leading-relaxed">
-                <p>
-                  <strong className="text-text">No PII enters the AI.</strong>{" "}
-                  Your client data is uploaded with Client IDs only — no names,
-                  no Social Security numbers, no addresses, no email addresses.
-                </p>
-                <p>
-                  <strong className="text-text">
-                    You control what data is sent.
-                  </strong>{" "}
-                  The Privacy Review screen shows you exactly which columns
-                  enter the AI context. Any detected PII triggers a warning.
-                </p>
-                <p>
-                  <strong className="text-text">
-                    No data is stored.
-                  </strong>{" "}
-                  Everything is session-based. When you close the tab, the data
-                  is gone. There are no databases, no file storage, no user
-                  accounts.
-                </p>
-                <p>
-                  <strong className="text-text">
-                    You map IDs back on your end.
-                  </strong>{" "}
-                  The AI only knows Client IDs like C-1001. You maintain the
-                  mapping to real client names in your own systems.
-                </p>
+                <p><strong className="text-text">Two-file architecture.</strong> Your client directory (names, contact info) stays in your browser. Only anonymized book data (Client IDs, holdings, tax info) is sent to the AI.</p>
+                <p><strong className="text-text">PII safety net.</strong> If you accidentally type a client name in chat, the system automatically replaces it with the Client ID before sending to the AI.</p>
+                <p><strong className="text-text">Reports generated locally.</strong> When you create a report, names are re-attached on your device. The AI never sees them.</p>
+                <p><strong className="text-text">No data is stored.</strong> Everything is session-based. When you close the tab, the data is gone.</p>
               </div>
-              <button
-                onClick={() => setPrivacyModalOpen(false)}
-                className="w-full py-2.5 bg-accent text-white font-heading font-bold text-sm rounded-lg hover:bg-accent/90 transition-colors"
-              >
+              <button onClick={() => setPrivacyModalOpen(false)} className="w-full py-2.5 bg-accent text-white font-heading font-bold text-sm rounded-lg hover:bg-accent/90 transition-colors">
                 Got it
               </button>
             </div>
@@ -487,26 +466,7 @@ function ReviewContent() {
     );
   }
 
-  if (step === "client_mapping" && book) {
-    const allIds = (book.clients as any[]).map(
-      (c: any) => c.client_id as string
-    );
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Header onBack={() => setStep("chat")} />
-        <main className="flex-1 px-4 sm:px-6 py-8 sm:py-12">
-          <ClientMapper
-            extractedClients={extractedClients}
-            allClientIds={allIds}
-            onGenerate={handleMapperGenerate}
-            onSkip={handleMapperSkip}
-            onBack={() => setStep("chat")}
-          />
-        </main>
-      </div>
-    );
-  }
-
+  // ── Report Preview ──
   if (step === "report_preview" && book && mode) {
     return (
       <div className="h-[100dvh] flex flex-col">
@@ -515,7 +475,7 @@ function ReviewContent() {
           clientMap={clientNameMap}
           book={book}
           onBack={() => setStep("report_preview")}
-          onEditNames={() => setStep("client_mapping")}
+          onEditNames={() => {}}
           onBackToChat={() => setStep("chat")}
         />
       </div>
@@ -537,101 +497,48 @@ function Header({
   showSidebarToggle?: boolean;
 }) {
   return (
-    <header
-      className={`flex items-center justify-between px-4 sm:px-6 border-b border-border ${minimal ? "py-2.5" : "py-4"}`}
-    >
+    <header className={`flex items-center justify-between px-4 sm:px-6 border-b border-border ${minimal ? "py-2.5" : "py-4"}`}>
       <div className="flex items-center gap-2 sm:gap-3">
         {showSidebarToggle && (
-          <button
-            onClick={onToggleSidebar}
-            className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text lg:hidden"
-          >
+          <button onClick={onToggleSidebar} className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text lg:hidden">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
             </svg>
           </button>
         )}
         {onBack && (
-          <button
-            onClick={onBack}
-            className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-              />
+          <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
           </button>
         )}
         <div className="flex items-center gap-2 sm:gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-xs text-white">
-            K
-          </div>
-          <span className="font-heading font-bold text-sm tracking-tight">
-            KAHF Capital
-          </span>
-          {!minimal && (
-            <span className="text-text-muted text-xs ml-1 hidden sm:inline">
-              Book Review Intelligence
-            </span>
-          )}
+          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-xs text-white">C</div>
+          <span className="font-heading font-bold text-sm tracking-tight">Conda</span>
+          {!minimal && <span className="text-text-muted text-xs ml-1 hidden sm:inline">Book Review Intelligence</span>}
         </div>
       </div>
     </header>
   );
 }
 
-function ModeCard({
-  title,
-  desc,
-  icon,
-  onClick,
-}: {
-  title: string;
-  desc: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-}) {
+function ModeCard({ title, desc, icon, onClick }: { title: string; desc: string; icon: React.ReactNode; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className="group text-left p-6 sm:p-8 bg-surface border border-border rounded-2xl hover:border-accent/40 hover:bg-accent-dim transition-all space-y-4"
-    >
-      <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-text-secondary group-hover:text-accent transition-colors">
-        {icon}
-      </div>
+    <button onClick={onClick} className="group text-left p-6 sm:p-8 bg-surface border border-border rounded-2xl hover:border-accent/40 hover:bg-accent-dim transition-all space-y-4">
+      <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-text-secondary group-hover:text-accent transition-colors">{icon}</div>
       <div>
-        <h3 className="font-heading font-bold text-xl mb-2 group-hover:text-accent transition-colors">
-          {title}
-        </h3>
+        <h3 className="font-heading font-bold text-xl mb-2 group-hover:text-accent transition-colors">{title}</h3>
         <p className="text-text-secondary text-sm leading-relaxed">{desc}</p>
       </div>
-      <div className="pt-2">
-        <span className="text-accent text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-          Select →
-        </span>
-      </div>
+      <div className="pt-2"><span className="text-accent text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Select →</span></div>
     </button>
   );
 }
 
 export default function ReviewPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>}>
       <ReviewContent />
     </Suspense>
   );

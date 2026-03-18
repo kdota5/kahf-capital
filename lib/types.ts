@@ -137,3 +137,21 @@ export interface ParseResult {
   errors: string[];
   piiWarnings: PIIWarning[];
 }
+
+// ── Client Directory (local-only PII) ──
+
+export interface ClientDirectoryEntry {
+  client_id: string;
+  full_name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  company?: string;
+  [key: string]: string | undefined;
+}
+
+export interface ClientDirectory {
+  entries: ClientDirectoryEntry[];
+  headers: string[];
+  loadedAt: string;
+}

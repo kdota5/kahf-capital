@@ -1,53 +1,50 @@
 import type { ClientNameMap } from "./report-engine";
+import type { ClientDirectory, ClientDirectoryEntry } from "./types";
 
-const STORAGE_KEY = "kahf_client_mappings";
+const DIRECTORY_KEY = "conda_client_directory";
 
-interface StoredClientMap {
-  mappings: ClientNameMap;
-  lastUpdated: string;
-  bookHash: string;
+export function buildMapFromDirectory(directory: ClientDirectory): ClientNameMap {
+  const map: ClientNameMap = {};
+  for (const entry of directory.entries) {
+    if (entry.client_id && entry.full_name) {
+      map[entry.client_id] = entry.full_name;
+    }
+  }
+  return map;
 }
 
-function hashClientIds(ids: string[]): string {
-  return ids.slice().sort().join(",");
+export function buildFullMapFromDirectory(
+  directory: ClientDirectory
+): Record<string, ClientDirectoryEntry> {
+  const map: Record<string, ClientDirectoryEntry> = {};
+  for (const entry of directory.entries) {
+    if (entry.client_id) {
+      map[entry.client_id] = entry;
+    }
+  }
+  return map;
 }
 
-export function saveClientMap(
-  map: ClientNameMap,
-  clientIds: string[]
-): void {
+export function persistDirectory(directory: ClientDirectory): void {
   try {
-    const stored: StoredClientMap = {
-      mappings: map,
-      lastUpdated: new Date().toISOString(),
-      bookHash: hashClientIds(clientIds),
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    localStorage.setItem(DIRECTORY_KEY, JSON.stringify(directory));
   } catch {
     // localStorage may be full or unavailable
   }
 }
 
-export function loadClientMap(clientIds: string[]): ClientNameMap | null {
+export function loadPersistedDirectory(): ClientDirectory | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const stored: StoredClientMap = JSON.parse(raw);
-    const applicable: ClientNameMap = {};
-    for (const id of clientIds) {
-      if (stored.mappings[id]) {
-        applicable[id] = stored.mappings[id];
-      }
-    }
-    return Object.keys(applicable).length > 0 ? applicable : null;
+    const raw = localStorage.getItem(DIRECTORY_KEY);
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-export function clearClientMap(): void {
+export function clearPersistedDirectory(): void {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(DIRECTORY_KEY);
   } catch {
     // noop
   }
