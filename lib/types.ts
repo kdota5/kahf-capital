@@ -123,6 +123,8 @@ export interface BookAnalytics {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  isInitialScan?: boolean;
+  scanDuration?: number;
 }
 
 export interface PIIWarning {

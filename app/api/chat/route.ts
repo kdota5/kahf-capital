@@ -59,6 +59,21 @@ export async function POST(req: NextRequest) {
               );
             }
           }
+
+          const finalMessage = await stream.finalMessage();
+          if (finalMessage.usage) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  usage: {
+                    input_tokens: finalMessage.usage.input_tokens,
+                    output_tokens: finalMessage.usage.output_tokens,
+                  },
+                })}\n\n`
+              )
+            );
+          }
+
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (error: any) {

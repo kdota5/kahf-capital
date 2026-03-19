@@ -49,10 +49,10 @@ export default function LandingPage() {
               Start Reviewing Your Book
             </Link>
             <Link
-              href="/review?demo=fa"
+              href="/review?demo=preloaded"
               className="px-8 py-3.5 bg-surface text-text-secondary font-heading font-semibold text-base rounded-xl border border-border hover:border-border-active hover:text-text transition-all"
             >
-              Try the Demo
+              View Live Demo
             </Link>
           </div>
 

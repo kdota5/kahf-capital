@@ -1,61 +1,114 @@
 "use client";
 
-import type { UserMode } from "@/lib/types";
+import type { UserMode, ChatMessage } from "@/lib/types";
 
 interface SuggestedQueriesProps {
   mode: UserMode;
   onSelect: (query: string) => void;
   compact?: boolean;
+  suggestions?: string[];
 }
 
-const FA_SUGGESTIONS = [
+const FA_OPENERS = [
   "Which clients are good Roth conversion candidates this year?",
   "Show me the top 5 clients by concentration risk",
   "Who has the most tax-loss harvesting opportunities?",
   "Which clients have the biggest mismatch between stated risk tolerance and actual portfolio?",
-  "If rates drop 100bps, which clients benefit most from their fixed income positioning?",
-  "Rank my top 10 clients by estimated annual tax drag",
-  "Which clients are underweight international equities?",
-  "Who is overweight mega-cap tech by more than 20%?",
 ];
 
-const ACCT_SUGGESTIONS = [
+const ACCT_OPENERS = [
   "Which clients are at risk for AMT this year?",
   "Who should itemize vs take the standard deduction?",
   "Flag clients who may be underpaying estimated taxes",
   "Which clients have 199A QBI deduction opportunities?",
-  "Who would benefit from charitable donation bunching?",
-  "Show me clients with the highest effective tax rates",
-  "Flag any clients where state residency changes might affect filing requirements",
-  "Which clients had capital gains that they might not be aware of?",
 ];
+
+export function generateSuggestions(
+  messages: ChatMessage[],
+  mode: UserMode
+): string[] {
+  if (messages.length === 0) {
+    return mode === "financial_advisor" ? FA_OPENERS : ACCT_OPENERS;
+  }
+
+  const assistantMsgs = messages.filter((m) => m.role === "assistant" && m.content.length > 0);
+  const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
+  if (!lastAssistant) {
+    return mode === "financial_advisor" ? FA_OPENERS : ACCT_OPENERS;
+  }
+
+  const content = lastAssistant.content.toLowerCase();
+  const mentionedIds = Array.from(
+    new Set((lastAssistant.content.match(/C-\d{3,5}/g) || []))
+  );
+
+  const suggestions: string[] = [];
+
+  if (mentionedIds.length > 0) {
+    suggestions.push(
+      `Deep dive on ${mentionedIds[0]} — full portfolio breakdown`
+    );
+  }
+
+  if (mentionedIds.length >= 2) {
+    suggestions.push(
+      `Compare ${mentionedIds[0]} and ${mentionedIds[1]} side by side`
+    );
+  }
+
+  if (content.includes("roth") && !content.includes("harvesting")) {
+    suggestions.push("Now show me tax-loss harvesting opportunities");
+  }
+  if (content.includes("concentration") && !content.includes("rebalance")) {
+    suggestions.push(
+      "Suggest a rebalancing plan for the concentrated positions"
+    );
+  }
+  if (content.includes("tax") && !content.includes("estate")) {
+    suggestions.push("Any estate planning considerations I should flag?");
+  }
+  if (content.includes("risk") && !content.includes("rebalance")) {
+    suggestions.push(
+      "Which clients need an allocation adjustment based on their risk profile?"
+    );
+  }
+  if (content.includes("retire") && !content.includes("income")) {
+    suggestions.push(
+      "What does the income plan look like for the near-retirement clients?"
+    );
+  }
+
+  if (suggestions.length < 4) {
+    suggestions.push("What other risks or opportunities am I missing?");
+  }
+
+  return suggestions.slice(0, 4);
+}
 
 export default function SuggestedQueries({
   mode,
   onSelect,
   compact,
+  suggestions: customSuggestions,
 }: SuggestedQueriesProps) {
-  const suggestions = mode === "financial_advisor" ? FA_SUGGESTIONS : ACCT_SUGGESTIONS;
-  const displayed = compact ? suggestions.slice(0, 3) : suggestions;
+  const displayed = customSuggestions
+    ? customSuggestions.slice(0, compact ? 3 : 4)
+    : (mode === "financial_advisor" ? FA_OPENERS : ACCT_OPENERS).slice(
+        0,
+        compact ? 3 : 4
+      );
 
   return (
-    <div className={compact ? "flex flex-wrap gap-2" : "space-y-3"}>
-      {!compact && (
-        <p className="text-xs text-text-muted font-medium uppercase tracking-wider">
-          Suggested Questions
-        </p>
-      )}
-      <div className={compact ? "flex flex-wrap gap-2" : "grid grid-cols-1 sm:grid-cols-2 gap-2"}>
-        {displayed.map((q) => (
-          <button
-            key={q}
-            onClick={() => onSelect(q)}
-            className="text-left px-3 py-2 text-xs sm:text-sm bg-surface border border-border rounded-lg hover:border-accent/40 hover:bg-accent-dim text-text-secondary hover:text-text transition-all"
-          >
-            {q}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-wrap gap-2 animate-fade-in">
+      {displayed.map((q) => (
+        <button
+          key={q}
+          onClick={() => onSelect(q)}
+          className="text-left px-3 py-2 text-xs sm:text-sm bg-surface border border-border rounded-lg hover:border-accent/40 hover:bg-accent-dim text-text-secondary hover:text-text transition-all"
+        >
+          {q}
+        </button>
+      ))}
     </div>
   );
 }

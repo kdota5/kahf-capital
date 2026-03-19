@@ -177,3 +177,74 @@ export async function copyToClipboard(
     await navigator.clipboard.writeText(plainText);
   }
 }
+
+export interface ComplianceLogParams {
+  firmName: string;
+  advisorName?: string;
+  clientCount: number;
+  clientIds: string[];
+  bookHeaders: string[];
+  directoryHeaders: string[];
+  sections: ReportSection[];
+}
+
+export function downloadComplianceLog(params: ComplianceLogParams): void {
+  const sessionId = crypto.randomUUID();
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const timeStr = now.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const withheldFields = params.directoryHeaders
+    .filter((h) => h !== "client_id" && h !== "clientid")
+    .join(", ");
+
+  const log = `COMPLIANCE LOG — AI-ASSISTED BOOK REVIEW
+${"=".repeat(50)}
+
+Session ID:      ${sessionId}
+Date:            ${dateStr} ${timeStr}
+Model:           Claude Sonnet 4 (Anthropic)
+Firm:            ${params.firmName}${params.advisorName ? `\nAdvisor:         ${params.advisorName}` : ""}
+
+DATA HANDLING
+${"─".repeat(50)}
+• Client data transmitted using anonymized Client IDs only
+• PII (names, contact info) stored locally in browser, never sent to API
+• Client name re-identification performed client-side after AI analysis
+• Anthropic API data retention: inputs not used for training
+
+DATA SCOPE
+${"─".repeat(50)}
+• Clients analyzed: ${params.clientCount}
+• Client IDs referenced in report: ${params.clientIds.join(", ")}
+• Fields transmitted to AI: ${params.bookHeaders.join(", ")}
+• Fields withheld from AI: ${withheldFields || "No client directory uploaded"}
+
+REPORT SECTIONS GENERATED
+${"─".repeat(50)}
+${params.sections
+  .map(
+    (s, i) =>
+      `${i + 1}. ${s.title}\n   Clients referenced: ${s.clientIdsReferenced.join(", ") || "none"}`
+  )
+  .join("\n")}
+
+${"─".repeat(50)}
+This compliance log was generated client-side. No data from this log was transmitted to any external service.
+`;
+
+  const blob = new Blob([log], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `compliance-log-${now.toISOString().slice(0, 10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}

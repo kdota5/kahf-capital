@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import type {
   BookData,
   FAClientRecord,
@@ -14,6 +14,7 @@ interface ClientTableProps {
   onClientClick: (clientId: string) => void;
   activeFilter?: string | null;
   clientNameMap?: ClientNameMap;
+  highlightedIds?: Record<string, number>;
 }
 
 type SortKey = string;
@@ -24,6 +25,7 @@ export default function ClientTable({
   onClientClick,
   activeFilter,
   clientNameMap,
+  highlightedIds,
 }: ClientTableProps) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("client_id");
@@ -51,6 +53,7 @@ export default function ClientTable({
         onClientClick={onClientClick}
         activeFilter={activeFilter}
         clientNameMap={clientNameMap}
+        highlightedIds={highlightedIds}
       />
     );
   }
@@ -66,6 +69,7 @@ export default function ClientTable({
       onClientClick={onClientClick}
       activeFilter={activeFilter}
       clientNameMap={clientNameMap}
+      highlightedIds={highlightedIds}
     />
   );
 }
@@ -81,6 +85,7 @@ interface FATableProps {
   onClientClick: (id: string) => void;
   activeFilter?: string | null;
   clientNameMap?: ClientNameMap;
+  highlightedIds?: Record<string, number>;
 }
 
 function FATable({
@@ -94,6 +99,7 @@ function FATable({
   onClientClick,
   activeFilter,
   clientNameMap,
+  highlightedIds,
 }: FATableProps) {
   const clientAUM = useMemo(() => {
     const map: Record<string, number> = {};
@@ -225,11 +231,13 @@ function FATable({
           <tbody>
             {filtered.map((c) => {
               const mappedName = clientNameMap?.[c.client_id];
+              const isHighlighted = highlightedIds && highlightedIds[c.client_id] && (Date.now() - highlightedIds[c.client_id] < 3000);
               return (
                 <tr
                   key={c.client_id}
                   onClick={() => onClientClick(c.client_id)}
-                  className="border-t border-border hover:bg-surface-hover cursor-pointer transition-colors"
+                  className={`border-t border-border hover:bg-surface-hover cursor-pointer transition-all duration-300 ${isHighlighted ? "bg-accent/5 border-l-2 border-l-accent" : ""}`}
+                  ref={(el) => { if (isHighlighted && el) el.scrollIntoView({ behavior: "smooth", block: "nearest" }); }}
                 >
                   <td className="px-2 py-2">
                     <span className="font-mono text-accent text-xs">{c.client_id}</span>
@@ -270,6 +278,7 @@ interface AcctTableProps {
   onClientClick: (id: string) => void;
   activeFilter?: string | null;
   clientNameMap?: ClientNameMap;
+  highlightedIds?: Record<string, number>;
 }
 
 function AcctTable({
@@ -282,6 +291,7 @@ function AcctTable({
   onClientClick,
   activeFilter,
   clientNameMap,
+  highlightedIds,
 }: AcctTableProps) {
   const filtered = useMemo(() => {
     let list = clients.filter(
@@ -397,11 +407,13 @@ function AcctTable({
           <tbody>
             {filtered.map((c) => {
               const mappedName = clientNameMap?.[c.client_id];
+              const isHighlighted = highlightedIds && highlightedIds[c.client_id] && (Date.now() - highlightedIds[c.client_id] < 3000);
               return (
                 <tr
                   key={c.client_id}
                   onClick={() => onClientClick(c.client_id)}
-                  className="border-t border-border hover:bg-surface-hover cursor-pointer transition-colors"
+                  className={`border-t border-border hover:bg-surface-hover cursor-pointer transition-all duration-300 ${isHighlighted ? "bg-accent/5 border-l-2 border-l-accent" : ""}`}
+                  ref={(el) => { if (isHighlighted && el) el.scrollIntoView({ behavior: "smooth", block: "nearest" }); }}
                 >
                   <td className="px-2 py-2">
                     <span className="font-mono text-accent text-xs">{c.client_id}</span>

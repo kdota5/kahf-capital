@@ -31,6 +31,8 @@ import {
   ACCT_DEMO_CLIENTS,
   FA_DEMO_DIRECTORY,
   ACCT_DEMO_DIRECTORY,
+  DEMO_FIRM_CONTEXT,
+  PRELOADED_CONVERSATION,
 } from "@/lib/demo-data";
 import UploadPanel from "@/components/upload-panel";
 import PrivacyGate from "@/components/privacy-gate";
@@ -39,31 +41,7 @@ import ClientTable from "@/components/client-table";
 import ChatInterface from "@/components/chat-interface";
 import ReportBuilder from "@/components/report-builder";
 
-type Step = "mode" | "upload" | "privacy" | "chat" | "report_preview";
-
-function prepareMessagesForAPI(
-  messages: ChatMessage[],
-  directory: ClientDirectory | null
-): ChatMessage[] {
-  if (!directory) return messages;
-
-  const nameVariants: { name: string; id: string }[] = [];
-  for (const entry of directory.entries) {
-    if (entry.full_name) {
-      nameVariants.push({ name: entry.full_name, id: entry.client_id });
-    }
-  }
-  nameVariants.sort((a, b) => b.name.length - a.name.length);
-
-  return messages.map((m) => {
-    let content = m.content;
-    for (const { name, id } of nameVariants) {
-      const regex = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-      content = content.replace(regex, id);
-    }
-    return { ...m, content };
-  });
-}
+type Step = "mode" | "upload" | "privacy" | "chat";
 
 function ReviewContent() {
   const searchParams = useSearchParams();
@@ -78,7 +56,27 @@ function ReviewContent() {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Report slide-over state
+  const [reportPanelOpen, setReportPanelOpen] = useState(false);
   const [reportSections, setReportSections] = useState<ReportSection[]>([]);
+
+  // Sidebar highlights
+  const [highlightedClientIds, setHighlightedClientIds] = useState<
+    Record<string, number>
+  >({});
+
+  // Token tracking
+  const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0 });
+
+  // Preloaded demo
+  const [preloadedMessages, setPreloadedMessages] = useState<
+    ChatMessage[] | undefined
+  >(undefined);
+  const [isDemoBanner, setIsDemoBanner] = useState(false);
+  const [demoFirm, setDemoFirm] = useState<typeof DEMO_FIRM_CONTEXT | null>(
+    null
+  );
 
   useEffect(() => {
     const demo = searchParams.get("demo");
@@ -88,17 +86,71 @@ function ReviewContent() {
     } else if (demo === "acct") {
       setMode("accountant");
       loadDemo("accountant");
+    } else if (demo === "preloaded") {
+      loadPreloadedDemo();
     }
   }, [searchParams]);
 
-  const loadDemo = useCallback((m: UserMode) => {
-    let bookData: BookData;
+  // Close report panel on Escape
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && reportPanelOpen) {
+        setReportPanelOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [reportPanelOpen]);
+
+  const loadPreloadedDemo = useCallback(() => {
+    const m: UserMode = "financial_advisor";
+    setMode(m);
+
     const demoDir: ClientDirectory = {
-      entries: m === "financial_advisor" ? FA_DEMO_DIRECTORY : ACCT_DEMO_DIRECTORY,
+      entries: FA_DEMO_DIRECTORY,
+      headers: ["client_id", "full_name", "email", "phone", "company"],
+      loadedAt: new Date().toISOString(),
+    };
+    const bookData: BookData = {
+      mode: m,
+      clients: FA_DEMO_CLIENTS,
+      holdings: FA_DEMO_HOLDINGS,
+      rawHeaders: [
+        "client_id", "age", "filing_status", "federal_tax_bracket",
+        "state_tax_rate", "risk_tolerance", "investment_objective",
+        "time_horizon", "annual_income", "liquid_net_worth",
+        "total_net_worth", "liquidity_needs",
+      ],
+      rowCount: FA_DEMO_CLIENTS.length,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    setBook(bookData);
+    setDirectory(demoDir);
+    const nameMap = buildMapFromDirectory(demoDir);
+    setClientNameMap(nameMap);
+    persistDirectory(demoDir);
+
+    const a = computeAnalytics(bookData);
+    setAnalytics(a);
+    const prompt = buildSystemPrompt(bookData, a);
+    setSystemPrompt(prompt);
+
+    setPreloadedMessages(PRELOADED_CONVERSATION);
+    setIsDemoBanner(true);
+    setDemoFirm(DEMO_FIRM_CONTEXT);
+    setStep("chat");
+  }, []);
+
+  const loadDemo = useCallback((m: UserMode) => {
+    const demoDir: ClientDirectory = {
+      entries:
+        m === "financial_advisor" ? FA_DEMO_DIRECTORY : ACCT_DEMO_DIRECTORY,
       headers: ["client_id", "full_name", "email", "phone", "company"],
       loadedAt: new Date().toISOString(),
     };
 
+    let bookData: BookData;
     if (m === "financial_advisor") {
       bookData = {
         mode: "financial_advisor",
@@ -136,12 +188,15 @@ function ReviewContent() {
     const nameMap = buildMapFromDirectory(demoDir);
     setClientNameMap(nameMap);
     persistDirectory(demoDir);
+    setDemoFirm(DEMO_FIRM_CONTEXT);
 
     const a = computeAnalytics(bookData);
     setAnalytics(a);
     setParseResult({
       clients: bookData.clients as unknown as Record<string, unknown>[],
-      holdings: bookData.holdings as unknown as Record<string, unknown>[] | undefined,
+      holdings: bookData.holdings as unknown as
+        | Record<string, unknown>[]
+        | undefined,
       headers: bookData.rawHeaders,
       errors: [],
       piiWarnings: [],
@@ -201,10 +256,25 @@ function ReviewContent() {
     (messages: ChatMessage[]) => {
       const sections = buildReportContent(messages, clientNameMap);
       setReportSections(sections);
-      setStep("report_preview");
+      setReportPanelOpen(true);
     },
     [clientNameMap]
   );
+
+  const handleHighlightClients = useCallback((ids: string[]) => {
+    const now = Date.now();
+    setHighlightedClientIds((prev) => {
+      const next = { ...prev };
+      for (const id of ids) {
+        next[id] = now;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleTokenUpdate = useCallback((input: number, output: number) => {
+    setTokenUsage({ input, output });
+  }, []);
 
   const handleClientClick = useCallback((clientId: string) => {
     const chatInterface = document.querySelector("textarea");
@@ -235,6 +305,11 @@ function ReviewContent() {
     { key: "bunching", label: "Bunching Candidates" },
     { key: "underpayment", label: "Underpayment Risk" },
   ];
+
+  const totalTokens = tokenUsage.input + tokenUsage.output;
+  const estimatedCost =
+    (tokenUsage.input * 0.003) / 1000 +
+    (tokenUsage.output * 0.015) / 1000;
 
   // ── Mode Selection ──
   if (step === "mode") {
@@ -279,7 +354,7 @@ function ReviewContent() {
     );
   }
 
-  // ── Upload (two-zone) ──
+  // ── Upload ──
   if (step === "upload" && mode) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -291,7 +366,8 @@ function ReviewContent() {
                 Upload Your Data
               </h1>
               <p className="text-text-secondary text-sm sm:text-base">
-                Two files: a private client directory (optional) and your anonymized book data.
+                Two files: a private client directory (optional) and your
+                anonymized book data.
               </p>
             </div>
             <UploadPanel
@@ -324,7 +400,7 @@ function ReviewContent() {
     );
   }
 
-  // ── Chat ──
+  // ── Chat (includes slide-over report) ──
   if (step === "chat" && book && analytics && mode) {
     const filters = mode === "financial_advisor" ? faFilters : acctFilters;
     const hasNames = Object.keys(clientNameMap).length > 0;
@@ -340,6 +416,7 @@ function ReviewContent() {
           }}
           activeFilter={activeFilter}
           clientNameMap={hasNames ? clientNameMap : undefined}
+          highlightedIds={highlightedClientIds}
         />
         <div className="space-y-2">
           <p className="text-xs text-text-muted font-medium uppercase tracking-wider">
@@ -370,7 +447,11 @@ function ReviewContent() {
 
     return (
       <div className="h-[100dvh] flex flex-col">
-        <Header minimal onToggleSidebar={() => setSidebarOpen((o) => !o)} showSidebarToggle />
+        <Header
+          minimal
+          onToggleSidebar={() => setSidebarOpen((o) => !o)}
+          showSidebarToggle
+        />
         <div className="flex-1 flex overflow-hidden relative">
           {sidebarOpen && (
             <div
@@ -407,11 +488,16 @@ function ReviewContent() {
               mode={mode}
               onGenerateReport={handleGenerateReport}
               directory={directory}
+              onHighlightClients={handleHighlightClients}
+              onTokenUpdate={handleTokenUpdate}
+              demoFirm={demoFirm}
+              preloadedMessages={preloadedMessages}
+              demoBanner={isDemoBanner}
             />
           </div>
         </div>
 
-        {/* Privacy footer */}
+        {/* Privacy footer with token counter */}
         <div className="border-t border-border bg-sidebar px-3 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto">
             <span className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-success-dim text-success border border-success/20 whitespace-nowrap">
@@ -427,57 +513,101 @@ function ReviewContent() {
             </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <span className="text-text-muted font-mono hidden sm:inline">Claude Sonnet 4</span>
+            <span className="text-text-muted font-mono hidden sm:inline">
+              Claude Sonnet 4
+            </span>
+            {totalTokens > 0 && (
+              <span className="text-text-muted font-mono text-[11px] hidden sm:inline">
+                ~{totalTokens >= 1000 ? `${Math.round(totalTokens / 1000)}k` : totalTokens} tokens
+                {estimatedCost >= 0.01 && ` ($${estimatedCost.toFixed(2)})`}
+              </span>
+            )}
             <button
               onClick={() => setPrivacyModalOpen(true)}
               className="text-text-muted hover:text-text-secondary transition-colors underline underline-offset-2 whitespace-nowrap"
             >
-              <span className="hidden sm:inline">How we protect your data</span>
+              <span className="hidden sm:inline">
+                How we protect your data
+              </span>
               <span className="sm:hidden">Privacy</span>
             </button>
           </div>
         </div>
 
+        {/* Report slide-over panel */}
+        {reportPanelOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-50 bg-black/40"
+              onClick={() => setReportPanelOpen(false)}
+            />
+            <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[680px] bg-sidebar border-l border-border animate-slide-in-right">
+              <ReportBuilder
+                sections={reportSections}
+                clientMap={clientNameMap}
+                book={book}
+                onBack={() => setReportPanelOpen(false)}
+                onBackToChat={() => setReportPanelOpen(false)}
+                directory={directory}
+              />
+            </div>
+          </>
+        )}
+
         {/* Privacy modal */}
         {privacyModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div className="bg-sidebar border border-border rounded-2xl p-6 sm:p-8 max-w-lg w-full mx-4 sm:mx-6 space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
-                <h3 className="font-heading font-bold text-lg">Privacy Architecture</h3>
-                <button onClick={() => setPrivacyModalOpen(false)} className="text-text-muted hover:text-text transition-colors">
+                <h3 className="font-heading font-bold text-lg">
+                  Privacy Architecture
+                </h3>
+                <button
+                  onClick={() => setPrivacyModalOpen(false)}
+                  className="text-text-muted hover:text-text transition-colors"
+                >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
               <div className="space-y-3 text-sm text-text-secondary leading-relaxed">
-                <p><strong className="text-text">Two-file architecture.</strong> Your client directory (names, contact info) stays in your browser. Only anonymized book data (Client IDs, holdings, tax info) is sent to the AI.</p>
-                <p><strong className="text-text">PII safety net.</strong> If you accidentally type a client name in chat, the system automatically replaces it with the Client ID before sending to the AI.</p>
-                <p><strong className="text-text">Reports generated locally.</strong> When you create a report, names are re-attached on your device. The AI never sees them.</p>
-                <p><strong className="text-text">No data is stored.</strong> Everything is session-based. When you close the tab, the data is gone.</p>
+                <p>
+                  <strong className="text-text">
+                    Two-file architecture.
+                  </strong>{" "}
+                  Your client directory (names, contact info) stays in your
+                  browser. Only anonymized book data (Client IDs, holdings, tax
+                  info) is sent to the AI.
+                </p>
+                <p>
+                  <strong className="text-text">PII safety net.</strong> If
+                  you accidentally type a client name in chat, the system
+                  automatically replaces it with the Client ID before sending to
+                  the AI.
+                </p>
+                <p>
+                  <strong className="text-text">
+                    Reports generated locally.
+                  </strong>{" "}
+                  When you create a report, names are re-attached on your
+                  device. The AI never sees them.
+                </p>
+                <p>
+                  <strong className="text-text">No data is stored.</strong>{" "}
+                  Everything is session-based. When you close the tab, the data
+                  is gone.
+                </p>
               </div>
-              <button onClick={() => setPrivacyModalOpen(false)} className="w-full py-2.5 bg-accent text-white font-heading font-bold text-sm rounded-lg hover:bg-accent/90 transition-colors">
+              <button
+                onClick={() => setPrivacyModalOpen(false)}
+                className="w-full py-2.5 bg-accent text-white font-heading font-bold text-sm rounded-lg hover:bg-accent/90 transition-colors"
+              >
                 Got it
               </button>
             </div>
           </div>
         )}
-      </div>
-    );
-  }
-
-  // ── Report Preview ──
-  if (step === "report_preview" && book && mode) {
-    return (
-      <div className="h-[100dvh] flex flex-col">
-        <ReportBuilder
-          sections={reportSections}
-          clientMap={clientNameMap}
-          book={book}
-          onBack={() => setStep("report_preview")}
-          onEditNames={() => {}}
-          onBackToChat={() => setStep("chat")}
-        />
       </div>
     );
   }
@@ -497,48 +627,91 @@ function Header({
   showSidebarToggle?: boolean;
 }) {
   return (
-    <header className={`flex items-center justify-between px-4 sm:px-6 border-b border-border ${minimal ? "py-2.5" : "py-4"}`}>
+    <header
+      className={`flex items-center justify-between px-4 sm:px-6 border-b border-border ${minimal ? "py-2.5" : "py-4"}`}
+    >
       <div className="flex items-center gap-2 sm:gap-3">
         {showSidebarToggle && (
-          <button onClick={onToggleSidebar} className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text lg:hidden">
+          <button
+            onClick={onToggleSidebar}
+            className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text lg:hidden"
+          >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
             </svg>
           </button>
         )}
         {onBack && (
-          <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text">
+          <button
+            onClick={onBack}
+            className="p-1.5 rounded-lg hover:bg-surface transition-colors text-text-secondary hover:text-text"
+          >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
           </button>
         )}
         <div className="flex items-center gap-2 sm:gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-xs text-white">C</div>
-          <span className="font-heading font-bold text-sm tracking-tight">Conda</span>
-          {!minimal && <span className="text-text-muted text-xs ml-1 hidden sm:inline">Book Review Intelligence</span>}
+          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center font-heading font-bold text-xs text-white">
+            C
+          </div>
+          <span className="font-heading font-bold text-sm tracking-tight">
+            Conda
+          </span>
+          {!minimal && (
+            <span className="text-text-muted text-xs ml-1 hidden sm:inline">
+              Book Review Intelligence
+            </span>
+          )}
         </div>
       </div>
     </header>
   );
 }
 
-function ModeCard({ title, desc, icon, onClick }: { title: string; desc: string; icon: React.ReactNode; onClick: () => void }) {
+function ModeCard({
+  title,
+  desc,
+  icon,
+  onClick,
+}: {
+  title: string;
+  desc: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
   return (
-    <button onClick={onClick} className="group text-left p-6 sm:p-8 bg-surface border border-border rounded-2xl hover:border-accent/40 hover:bg-accent-dim transition-all space-y-4">
-      <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-text-secondary group-hover:text-accent transition-colors">{icon}</div>
+    <button
+      onClick={onClick}
+      className="group text-left p-6 sm:p-8 bg-surface border border-border rounded-2xl hover:border-accent/40 hover:bg-accent-dim transition-all space-y-4"
+    >
+      <div className="w-14 h-14 rounded-xl bg-bg flex items-center justify-center text-text-secondary group-hover:text-accent transition-colors">
+        {icon}
+      </div>
       <div>
-        <h3 className="font-heading font-bold text-xl mb-2 group-hover:text-accent transition-colors">{title}</h3>
+        <h3 className="font-heading font-bold text-xl mb-2 group-hover:text-accent transition-colors">
+          {title}
+        </h3>
         <p className="text-text-secondary text-sm leading-relaxed">{desc}</p>
       </div>
-      <div className="pt-2"><span className="text-accent text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Select →</span></div>
+      <div className="pt-2">
+        <span className="text-accent text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+          Select →
+        </span>
+      </div>
     </button>
   );
 }
 
 export default function ReviewPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
       <ReviewContent />
     </Suspense>
   );
