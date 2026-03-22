@@ -1,0 +1,168 @@
+---
+description: Conda — Privacy-First Book Review Intelligence for Financial Advisors
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# Conda — Project Prompt
+
+## What Conda Is
+
+Conda is a privacy-first AI intelligence layer for financial advisors and accountants. It lets advisors upload their entire book of business — anonymized with Client IDs only, no PII — and have an open-ended conversation with a senior analyst (Claude) who has memorized every portfolio, tax situation, and risk profile.
+
+Conda is **not** a proposal generator or a form-filling tool. It is an always-on intelligence layer — the advisor talks to it like a colleague, and it produces real deliverables (decks, spreadsheets, PDFs, charts) directly in the conversation.
+
+## Core Architecture
+
+### Privacy Model — Two-File Architecture
+
+The fundamental privacy constraint drives every design decision:
+
+1. **Client Directory** (File 1 — PRIVATE): Contains Client ID, Full Name, email, phone, company. Parsed and stored **only in browser memory / localStorage**. NEVER sent to any API. NEVER leaves the browser.
+
+2. **Book Data** (File 2 — SENT TO AI): Contains Client ID, Age, Holdings, Tax Info, Risk Profile. Anonymized — no PII. This is serialized into the system prompt and sent to Claude.
+
+The AI reasons on anonymous data. Real names are re-attached locally for reports and file downloads. PII never touches the wire.
+
+### PII Safety Net
+
+If the advisor accidentally types a client name in chat, the system silently replaces it with the Client ID before sending to the API (`sanitizeForAPI` in `chat-interface.tsx`).
+
+### File Generation Privacy
+
+When Claude generates a file (PPTX, XLSX, PDF), it uses Client IDs in tool payloads. The `/api/generate-file` endpoint receives a `client_map` from the browser and applies `applyClientMapToToolInput` to re-inject real names into the file content right before generation. The AI never sees the names.
+
+## Tech Stack
+
+- **Framework**: Next.js 14, App Router, TypeScript
+- **Styling**: Tailwind CSS v4, dark theme
+- **AI**: Anthropic Claude API (configurable model via `ANTHROPIC_MODEL` env var, defaults to `claude-sonnet-4-20250514`)
+- **File Parsing**: `papaparse` (CSV), `xlsx` (Excel book data), `mammoth` (DOCX), `pdf-parse` (PDF), `jszip` (PPTX)
+- **File Generation**: `pptxgenjs` (PowerPoint), `exceljs` (Excel), `jspdf` + `jspdf-autotable` (PDF)
+- **Charts**: `recharts` (inline interactive charts in chat)
+- **Markdown**: `react-markdown` + `remark-gfm`
+- **Deployment**: Vercel (serverless, streaming)
+
+## Application Flow
+
+```
+Landing Page (/) → Mode Select → Upload (two files) → Privacy Gate → Chat
+                                                                       ↓
+                                                            Settings (/settings/style)
+```
+
+1. **Mode Selection**: Financial Advisor or Accountant — determines data schema and AI analysis focus
+2. **Upload**: Two upload zones — private Client Directory (optional) + anonymized Book Data
+3. **Privacy Gate**: Animated visualization showing data split — PII stays local, anonymized data sent to AI
+4. **Chat**: Split-panel view — sidebar with book summary, client table, filters; main area with streaming AI chat
+
+## Key Subsystems
+
+### Chat & Tool Use (`components/chat-interface.tsx`)
+
+- **Initial Scan**: Auto-fires on first mount — Claude performs an unprompted initial review of the book
+- **User Messages**: Sent with `enableFileTools: true` to `/api/chat` — returns JSON with `text`, `tool_calls`, `usage`
+- **Tool Processing**: `render_chart` → inline Recharts component; `generate_pptx/xlsx/pdf` → async call to `/api/generate-file` → download card in chat
+- **Streaming**: Initial scan uses SSE streaming; user messages use non-streaming JSON (required for tool use)
+
+### File Generation Tools (`lib/tools.ts`)
+
+Four tools defined for Claude:
+- `generate_pptx` — PowerPoint decks with multiple slide layouts
+- `generate_xlsx` — Excel workbooks with formulas, formatting, freeze panes
+- `generate_pdf` — PDF reports with sections, tables, footers
+- `render_chart` — Inline interactive charts (bar, line, pie, area, etc.)
+
+### Firm Style Configuration (`lib/style-engine.ts`)
+
+Advisors upload sample documents (PPTX, PDF, XLSX, DOCX, TXT) and Claude extracts the firm's writing style — structure, tone, formatting, vocabulary, compliance disclaimers. The extracted `promptFragment` is injected into every system prompt so all AI output matches the firm's voice.
+
+When the advisor asks to generate a deliverable and has uploaded sample documents, Claude should ask which sample to use as the structural template before generating.
+
+The style profile is stored in `localStorage` under `conda_firm_style`. It persists across sessions and can be exported/imported as JSON.
+
+### System Prompt Construction (`lib/system-prompt.ts`)
+
+The system prompt is built dynamically from:
+1. Base analyst role + capabilities + response guidelines
+2. Complete client data (serialized from the book)
+3. File generation tool instructions
+4. Firm style injection (if configured)
+
+## API Routes
+
+| Route | Purpose | Max Duration |
+|---|---|---|
+| `/api/chat` | Claude conversation (streaming + tool use) | 120s |
+| `/api/generate-file` | File generation from tool calls | 60s |
+| `/api/analyze-style` | Style profile extraction from sample docs | 120s |
+| `/api/analyze-style/regenerate` | Rewrite promptFragment after edits | 60s |
+| `/api/analyze-style/compare` | Side-by-side styled vs default output | 120s |
+| `/api/parse-document` | Text extraction from uploaded files | 30s |
+
+## File Structure
+
+```
+app/
+  page.tsx                          — Landing page
+  layout.tsx                        — Root layout
+  review/page.tsx                   — Main application (mode select → upload → privacy → chat)
+  settings/page.tsx                 — Settings index
+  settings/style/page.tsx           — Firm style configuration
+  api/chat/route.ts                 — Claude chat API
+  api/generate-file/route.ts        — File generation API
+  api/analyze-style/route.ts        — Style analysis API
+  api/analyze-style/regenerate/     — Style regeneration API
+  api/analyze-style/compare/        — Style comparison API
+  api/parse-document/route.ts       — Document text extraction API
+
+components/
+  upload-panel.tsx                  — Two-file upload interface
+  privacy-gate.tsx                  — Privacy confirmation with animation
+  book-summary.tsx                  — Book statistics sidebar card
+  client-table.tsx                  — Searchable client list with highlights
+  chat-interface.tsx                — Main chat with streaming, tools, charts
+  suggested-queries.tsx             — Context-aware suggestion cards
+  inline-chart.tsx                  — Recharts wrapper for chat
+  chat-file-attachment.tsx          — File download card in chat
+  report-builder.tsx                — Report slide-over panel
+  settings/
+    style-uploader.tsx              — Multi-format document upload
+    style-profile-viewer.tsx        — Editable style profile display
+    style-comparison.tsx            — Before/after styled output preview
+
+lib/
+  types.ts                          — All TypeScript interfaces
+  parser.ts                         — CSV/Excel book data parser
+  analytics.ts                      — Book-level analytics computation
+  system-prompt.ts                  — Dynamic system prompt builder
+  style-engine.ts                   — Style profile types, storage, injection
+  style-analysis-prompt.ts          — Prompts for style extraction
+  tools.ts                          — Claude tool definitions
+  demo-data.ts                      — Demo book data + directory + conversation
+  report-engine.ts                  — Client ID extraction, report section builder
+  client-map-store.ts               — Client directory persistence
+  apply-client-map.ts               — PII re-injection for file generation
+  file-generators/
+    pptx-generator.ts               — PowerPoint generation
+    xlsx-generator.ts               — Excel generation
+    pdf-generator.ts                — PDF generation
+```
+
+## Design Conventions
+
+- **Dark theme** with CSS custom properties (`--bg`, `--surface`, `--text`, `--accent`, etc.)
+- **Font**: `font-heading` for headings (bold, tight tracking), system font for body
+- All animations use CSS `@keyframes` — no external animation libraries
+- Mobile-responsive with `sm:` / `lg:` breakpoints
+- Sidebar collapses to hamburger on mobile
+
+## Development Rules
+
+1. **Never send PII to any API**: Client names, emails, phones, SSNs stay in the browser
+2. **Client IDs only in AI context**: System prompt, chat messages, and tool payloads use Client IDs exclusively
+3. **Name re-injection happens locally**: Reports and generated files apply `clientNameMap` in the browser or in `/api/generate-file` (which receives the map from the browser)
+4. **localStorage keys use `conda_` prefix**: `conda_firm_style`, `conda_client_directory`, `conda_style_banner_dismissed`
+5. **All deliverable generation happens in chat**: No separate report generation step — the advisor asks Claude to create files and they appear inline
+6. **Style follows the firm**: When a style profile is configured, every AI response and generated file matches the firm's voice, structure, and vocabulary

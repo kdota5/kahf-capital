@@ -1,9 +1,20 @@
+export interface DocumentTemplate {
+  id: string;
+  name: string;
+  type: string;
+  wordCount: number;
+  textPreview: string;
+  uploadedAt: string;
+}
+
 export interface FirmStyleProfile {
   id: string;
   firmName: string;
   createdAt: string;
   updatedAt: string;
   samplesUsed: number;
+
+  templates?: DocumentTemplate[];
 
   structure: {
     sectionOrder: string[];
@@ -123,6 +134,14 @@ export function getStylePromptInjection(): string {
     .map(([k, v]) => `- Use "${v}" instead of "${k}"`)
     .join("\n");
 
+  const templateBlock =
+    profile.templates && profile.templates.length > 0
+      ? `\n### Available document templates:
+The advisor uploaded these sample documents. When they ask you to generate a proposal, report, deck, or similar deliverable, reference these by name and confirm which one to base the output on before generating.
+${profile.templates.map((t, i) => `${i + 1}. **${t.name}** (${t.type.toUpperCase()}, ~${t.wordCount.toLocaleString()} words) — Preview: "${t.textPreview.slice(0, 150).replace(/\n/g, " ")}..."`).join("\n")}
+`
+      : "";
+
   return `
 
 ## FIRM WRITING STYLE — MANDATORY
@@ -130,7 +149,7 @@ export function getStylePromptInjection(): string {
 The advisor's firm has a specific writing style that ALL generated content must follow. This includes chat responses, proposals, reports, presentation text, and any other written output.
 
 ${profile.promptFragment}
-
+${templateBlock}
 ### Structural requirements:
 - Section order: ${profile.structure.sectionOrder.join(" → ")}
 - Executive summaries: ${profile.structure.executiveSummaryStyle}

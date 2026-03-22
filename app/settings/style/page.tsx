@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import type { FirmStyleProfile } from "@/lib/style-engine";
+import type { FirmStyleProfile, DocumentTemplate } from "@/lib/style-engine";
 import {
   saveStyleProfile,
   loadStyleProfile,
@@ -28,10 +28,14 @@ export default function StyleSettingsPage() {
   }, []);
 
   const handleAnalyze = useCallback(
-    async (documentTexts: string[], firmName: string) => {
+    async (
+      docs: Array<{ name: string; text: string; size: number; type: string }>,
+      firmName: string
+    ) => {
       setAnalyzing(true);
       setError(null);
       try {
+        const documentTexts = docs.map((d) => d.text);
         const res = await fetch("/api/analyze-style", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -39,8 +43,23 @@ export default function StyleSettingsPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Analysis failed");
-        setProfile(data.profile);
-        saveStyleProfile(data.profile);
+
+        const templates: DocumentTemplate[] = docs.map((d) => ({
+          id: crypto.randomUUID(),
+          name: d.name,
+          type: d.type,
+          wordCount: d.text.split(/\s+/).filter(Boolean).length,
+          textPreview: d.text.slice(0, 300),
+          uploadedAt: new Date().toISOString(),
+        }));
+
+        const profileWithTemplates: FirmStyleProfile = {
+          ...data.profile,
+          templates,
+        };
+
+        setProfile(profileWithTemplates);
+        saveStyleProfile(profileWithTemplates);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Analysis failed");
       } finally {

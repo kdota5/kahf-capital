@@ -10,7 +10,6 @@ import type {
   ChatChartSpec,
   ChatFileAttachmentState,
 } from "@/lib/types";
-import { countReferencedClients } from "@/lib/report-engine";
 import { buildMapFromDirectory } from "@/lib/client-map-store";
 import SuggestedQueries, { generateSuggestions } from "./suggested-queries";
 import { InlineChart } from "./inline-chart";
@@ -26,7 +25,6 @@ interface DemoFirmInfo {
 interface ChatInterfaceProps {
   systemPrompt: string;
   mode: UserMode;
-  onGenerateReport?: (messages: ChatMessage[]) => void;
   directory?: ClientDirectory | null;
   onHighlightClients?: (ids: string[]) => void;
   onTokenUpdate?: (input: number, output: number) => void;
@@ -90,7 +88,6 @@ function slugifyFileName(s: string): string {
 export default function ChatInterface({
   systemPrompt,
   mode,
-  onGenerateReport,
   directory,
   onHighlightClients,
   onTokenUpdate,
@@ -131,18 +128,6 @@ export default function ChatInterface({
     }, 2000);
     return () => clearInterval(interval);
   }, [scanning]);
-
-  const assistantMsgCount = useMemo(
-    () =>
-      messages.filter((m) => m.role === "assistant" && m.content.length > 0)
-        .length,
-    [messages]
-  );
-
-  const referencedClientCount = useMemo(
-    () => countReferencedClients(messages),
-    [messages]
-  );
 
   const dynamicSuggestions = useMemo(
     () => generateSuggestions(messages, mode),
@@ -498,8 +483,6 @@ export default function ChatInterface({
     }
   };
 
-  const showReportBar =
-    assistantMsgCount >= 2 && !streaming && !scanning && onGenerateReport;
   const showSuggestions = !streaming && !scanning && messages.length > 0;
 
   return (
@@ -674,38 +657,6 @@ export default function ChatInterface({
       </div>
 
       <div className="border-t border-border px-3 sm:px-6 py-3 sm:py-4 space-y-3">
-        {showReportBar && (
-          <div className="flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 bg-surface border border-border rounded-xl">
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-text-secondary">
-              <svg
-                className="w-4 h-4 text-accent shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                />
-              </svg>
-              <span>
-                <span className="font-mono text-accent font-medium">
-                  {referencedClientCount}
-                </span>{" "}
-                client{referencedClientCount !== 1 ? "s" : ""} discussed
-              </span>
-            </div>
-            <button
-              onClick={() => onGenerateReport?.(messages)}
-              className="px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-heading font-bold bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors whitespace-nowrap"
-            >
-              Generate Report
-            </button>
-          </div>
-        )}
-
         {showSuggestions && (
           <SuggestedQueries
             mode={mode}

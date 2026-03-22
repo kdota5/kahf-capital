@@ -17,11 +17,7 @@ import type {
 } from "@/lib/types";
 import { computeAnalytics } from "@/lib/analytics";
 import { buildSystemPrompt } from "@/lib/system-prompt";
-import {
-  buildReportContent,
-  type ClientNameMap,
-  type ReportSection,
-} from "@/lib/report-engine";
+import type { ClientNameMap } from "@/lib/report-engine";
 import {
   buildMapFromDirectory,
   persistDirectory,
@@ -45,7 +41,6 @@ import PrivacyGate from "@/components/privacy-gate";
 import BookSummary from "@/components/book-summary";
 import ClientTable from "@/components/client-table";
 import ChatInterface from "@/components/chat-interface";
-import ReportBuilder from "@/components/report-builder";
 
 type Step = "mode" | "upload" | "privacy" | "chat";
 
@@ -62,10 +57,6 @@ function ReviewContent() {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  // Report slide-over state
-  const [reportPanelOpen, setReportPanelOpen] = useState(false);
-  const [reportSections, setReportSections] = useState<ReportSection[]>([]);
 
   // Sidebar highlights
   const [highlightedClientIds, setHighlightedClientIds] = useState<
@@ -109,17 +100,6 @@ function ReviewContent() {
       loadPreloadedDemo();
     }
   }, [searchParams]);
-
-  // Close report panel on Escape
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && reportPanelOpen) {
-        setReportPanelOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [reportPanelOpen]);
 
   const loadPreloadedDemo = useCallback(() => {
     const m: UserMode = "financial_advisor";
@@ -270,15 +250,6 @@ function ReviewContent() {
       setStep("chat");
     }
   }, [book, analytics]);
-
-  const handleGenerateReport = useCallback(
-    (messages: ChatMessage[]) => {
-      const sections = buildReportContent(messages, clientNameMap);
-      setReportSections(sections);
-      setReportPanelOpen(true);
-    },
-    [clientNameMap]
-  );
 
   const handleHighlightClients = useCallback((ids: string[]) => {
     const now = Date.now();
@@ -547,7 +518,6 @@ function ReviewContent() {
             <ChatInterface
               systemPrompt={systemPrompt}
               mode={mode}
-              onGenerateReport={handleGenerateReport}
               directory={directory}
               onHighlightClients={handleHighlightClients}
               onTokenUpdate={handleTokenUpdate}
@@ -605,26 +575,6 @@ function ReviewContent() {
             </button>
           </div>
         </div>
-
-        {/* Report slide-over panel */}
-        {reportPanelOpen && (
-          <>
-            <div
-              className="fixed inset-0 z-50 bg-black/40"
-              onClick={() => setReportPanelOpen(false)}
-            />
-            <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[680px] bg-sidebar border-l border-border animate-slide-in-right">
-              <ReportBuilder
-                sections={reportSections}
-                clientMap={clientNameMap}
-                book={book}
-                onBack={() => setReportPanelOpen(false)}
-                onBackToChat={() => setReportPanelOpen(false)}
-                directory={directory}
-              />
-            </div>
-          </>
-        )}
 
         {/* Privacy modal */}
         {privacyModalOpen && (

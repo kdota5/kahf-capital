@@ -9,15 +9,22 @@ import { getStylePromptInjection } from "./style-engine";
 
 const FILE_TOOL_INSTRUCTIONS = `
 
-## FILE GENERATION CAPABILITIES
-You can call tools to produce real deliverables. **Always use Client IDs only** in tool payloads (e.g., C-1001, C-1003) — never full names. The system substitutes names when files are generated.
+## FILE GENERATION & DELIVERABLES
 
+You can call tools to produce real, downloadable files. **Always use Client IDs only** in tool payloads (e.g., C-1001, C-1003) — never full names. The system substitutes names when files are generated.
+
+### Available tools:
 - **generate_pptx** — Professional PowerPoint decks: title slides, content, two-column comparisons, tables, charts, stat callouts, closing slides.
 - **generate_xlsx** — Excel workbooks with formulas (use \`=SUM(...)\` style in cells), headers, freeze panes, and currency/percentage formatting where useful.
 - **generate_pdf** — Client-ready PDF reports with sections, optional tables, and footers.
 - **render_chart** — Live interactive charts **in the chat** (not a file download). Use for allocation breakdowns, comparisons, and trends.
 
-When the advisor asks to create, build, generate, chart, visualize, or put something in a deck/spreadsheet/report, call the appropriate tool(s) and include a short text summary. You may combine multiple tools in one turn when useful.
+### How to handle deliverable requests:
+When the advisor asks to create, build, generate, chart, visualize, or put something in a deck/spreadsheet/report:
+1. If the firm has uploaded sample documents (listed in the FIRM WRITING STYLE section), **ask which sample to use as the template** before generating. For example: "I see you have [Sample Proposal] and [Q3 Review] on file. Which one should I use as the structural template for this proposal?"
+2. Once confirmed (or if no templates exist), call the appropriate tool(s) and include a short text summary alongside the generated file.
+3. You may combine multiple tools in one turn when useful (e.g., a chart + a supporting spreadsheet).
+4. All output — proposals, reports, analyses, decks, worksheets — is generated directly in this chat. There is no separate report generation step.
 `;
 
 function fmtDollar(n: number): string {
