@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import Link from "next/link";
 import type {
   UserMode,
   BookData,
@@ -25,6 +26,11 @@ import {
   buildMapFromDirectory,
   persistDirectory,
 } from "@/lib/client-map-store";
+import {
+  loadStyleProfile,
+  isStyleBannerDismissed,
+  dismissStyleBanner,
+} from "@/lib/style-engine";
 import {
   FA_DEMO_CLIENTS,
   FA_DEMO_HOLDINGS,
@@ -77,6 +83,19 @@ function ReviewContent() {
   const [demoFirm, setDemoFirm] = useState<typeof DEMO_FIRM_CONTEXT | null>(
     null
   );
+
+  // Style profile
+  const [styleProfileName, setStyleProfileName] = useState<string | null>(null);
+  const [showStyleBanner, setShowStyleBanner] = useState(false);
+
+  useEffect(() => {
+    const profile = loadStyleProfile();
+    if (profile) {
+      setStyleProfileName(profile.firmName);
+    } else if (!isStyleBannerDismissed()) {
+      setShowStyleBanner(true);
+    }
+  }, []);
 
   useEffect(() => {
     const demo = searchParams.get("demo");
@@ -442,6 +461,20 @@ function ReviewContent() {
             ))}
           </div>
         </div>
+
+        {/* Settings link */}
+        <div className="pt-2 border-t border-border">
+          <Link
+            href="/settings/style"
+            className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-text-muted hover:text-text hover:bg-surface transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            {styleProfileName ? `${styleProfileName} style` : "Configure Firm Style"}
+          </Link>
+        </div>
       </>
     );
 
@@ -483,6 +516,34 @@ function ReviewContent() {
           </div>
 
           <div className="flex-1 flex flex-col min-w-0">
+            {/* Style onboarding banner */}
+            {showStyleBanner && !styleProfileName && step === "chat" && (
+              <div className="mx-4 mt-3 flex items-center justify-between gap-3 px-4 py-2.5 bg-accent-dim border border-accent/20 rounded-xl text-sm animate-fade-in">
+                <p className="text-text-secondary">
+                  <span className="text-accent font-medium">Want outputs that match your firm&apos;s voice?</span>{" "}
+                  Upload a sample proposal in Settings.
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href="/settings/style"
+                    className="px-3 py-1 rounded-lg bg-accent text-white text-xs font-heading font-bold hover:bg-accent/90 transition-colors"
+                  >
+                    Set Up Now
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setShowStyleBanner(false);
+                      dismissStyleBanner();
+                    }}
+                    className="text-text-muted hover:text-text transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
             <ChatInterface
               systemPrompt={systemPrompt}
               mode={mode}
@@ -516,6 +577,17 @@ function ReviewContent() {
             <span className="text-text-muted font-mono hidden sm:inline">
               Claude Sonnet 4
             </span>
+            {styleProfileName && (
+              <Link
+                href="/settings/style"
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent-dim border border-accent/20 text-accent text-[11px] font-medium hover:border-accent/40 transition-colors whitespace-nowrap"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                </svg>
+                {styleProfileName} style
+              </Link>
+            )}
             {totalTokens > 0 && (
               <span className="text-text-muted font-mono text-[11px] hidden sm:inline">
                 ~{totalTokens >= 1000 ? `${Math.round(totalTokens / 1000)}k` : totalTokens} tokens

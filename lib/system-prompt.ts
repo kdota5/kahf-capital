@@ -5,6 +5,7 @@ import type {
   FAHolding,
   AcctClientRecord,
 } from "./types";
+import { getStylePromptInjection } from "./style-engine";
 
 const FILE_TOOL_INSTRUCTIONS = `
 
@@ -106,7 +107,7 @@ ${holdingLines}`;
 
 ## COMPLETE CLIENT DATA
 
-${clientBlocks}${FILE_TOOL_INSTRUCTIONS}`;
+${clientBlocks}${FILE_TOOL_INSTRUCTIONS}${getStylePromptInjection()}`;
 }
 
 function buildAccountantPrompt(
@@ -189,5 +190,5 @@ PAYMENTS & CREDITS:
 
 ## COMPLETE CLIENT DATA
 
-${clientBlocks}${FILE_TOOL_INSTRUCTIONS}`;
+${clientBlocks}${FILE_TOOL_INSTRUCTIONS}${getStylePromptInjection()}`;
 }
