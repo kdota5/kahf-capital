@@ -11,16 +11,16 @@ interface SuggestedQueriesProps {
 
 const FA_OPENERS = [
   "Which clients are good Roth conversion candidates this year?",
-  "Show me the top 5 clients by concentration risk",
-  "Who has the most tax-loss harvesting opportunities?",
-  "Which clients have the biggest mismatch between stated risk tolerance and actual portfolio?",
+  "Create a portfolio comparison deck for my top 3 clients by AUM",
+  "Chart the allocation breakdown across my entire book",
+  "Build a tax-loss harvesting worksheet for all clients with material losses",
 ];
 
 const ACCT_OPENERS = [
   "Which clients are at risk for AMT this year?",
-  "Who should itemize vs take the standard deduction?",
-  "Flag clients who may be underpaying estimated taxes",
-  "Which clients have 199A QBI deduction opportunities?",
+  "Build a tax liability estimate worksheet for all clients",
+  "Chart the income distribution across my book",
+  "Create a summary report of AMT-risk clients",
 ];
 
 export function generateSuggestions(

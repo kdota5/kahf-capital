@@ -3,9 +3,18 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ChatMessage, UserMode, ClientDirectory } from "@/lib/types";
+import type {
+  ChatMessage,
+  UserMode,
+  ClientDirectory,
+  ChatChartSpec,
+  ChatFileAttachmentState,
+} from "@/lib/types";
 import { countReferencedClients } from "@/lib/report-engine";
+import { buildMapFromDirectory } from "@/lib/client-map-store";
 import SuggestedQueries, { generateSuggestions } from "./suggested-queries";
+import { InlineChart } from "./inline-chart";
+import { ChatFileAttachment } from "./chat-file-attachment";
 
 interface DemoFirmInfo {
   name: string;
@@ -67,6 +76,15 @@ function sanitizeForAPI(
     }
     return { ...m, content };
   });
+}
+
+function slugifyFileName(s: string): string {
+  return (
+    s
+      .replace(/[^\w\- ]+/g, "")
+      .trim()
+      .slice(0, 80) || "document"
+  );
 }
 
 export default function ChatInterface({
@@ -131,6 +149,11 @@ export default function ChatInterface({
     [messages, mode]
   );
 
+  const clientNameMap = useMemo(
+    () => (directory ? buildMapFromDirectory(directory) : {}),
+    [directory]
+  );
+
   const streamResponse = useCallback(
     async (
       apiMessages: ChatMessage[]
@@ -141,7 +164,11 @@ export default function ChatInterface({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: sanitized, systemPrompt }),
+        body: JSON.stringify({
+          messages: sanitized,
+          systemPrompt,
+          enableFileTools: false,
+        }),
         signal: abortRef.current.signal,
       });
 
@@ -204,6 +231,62 @@ export default function ChatInterface({
       return { content: fullContent, inputTokens, outputTokens };
     },
     [systemPrompt, directory, onHighlightClients]
+  );
+
+  const generateFileFromTool = useCallback(
+    async (
+      toolName: string,
+      toolInput: unknown,
+      fileIndex: number,
+      map: Record<string, string>
+    ) => {
+      try {
+        const res = await fetch("/api/generate-file", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tool_name: toolName,
+            tool_input: toolInput,
+            client_map: map,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(
+            (err as { error?: string }).error || res.statusText
+          );
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role !== "assistant" || !last.files) return prev;
+          const files = [...last.files];
+          if (files[fileIndex]) {
+            files[fileIndex] = { ...files[fileIndex], generating: false, url };
+          }
+          return [...next.slice(0, -1), { ...last, files }];
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Generation failed";
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role !== "assistant" || !last.files) return prev;
+          const files = [...last.files];
+          if (files[fileIndex]) {
+            files[fileIndex] = {
+              ...files[fileIndex],
+              generating: false,
+              error: msg,
+            };
+          }
+          return [...next.slice(0, -1), { ...last, files }];
+        });
+      }
+    },
+    []
   );
 
   // Auto-fire initial scan
@@ -279,22 +362,115 @@ export default function ChatInterface({
       setMessages([...newMessages, assistantMsg]);
 
       try {
-        const { inputTokens, outputTokens } =
-          await streamResponse(newMessages);
+        const sanitized = sanitizeForAPI(newMessages, directory);
 
-        totalInputTokensRef.current += inputTokens;
-        totalOutputTokensRef.current += outputTokens;
-        onTokenUpdate?.(
-          totalInputTokensRef.current,
-          totalOutputTokensRef.current
-        );
-      } catch (e: any) {
-        if (e.name !== "AbortError") {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: sanitized,
+            systemPrompt,
+            enableFileTools: true,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Unknown error" }));
+          throw new Error(err.error || res.statusText);
+        }
+
+        const result = (await res.json()) as {
+          text?: string;
+          tool_calls?: Array<{ id: string; name: string; input: unknown }>;
+          usage?: { input_tokens: number; output_tokens: number };
+        };
+
+        const text = result.text || "";
+        const toolCalls = result.tool_calls || [];
+
+        const charts: ChatChartSpec[] = [];
+        const files: ChatFileAttachmentState[] = [];
+        const fileToolQueue: Array<{
+          name: string;
+          input: unknown;
+          index: number;
+        }> = [];
+
+        for (const tc of toolCalls) {
+          if (tc.name === "render_chart") {
+            charts.push(tc.input as ChatChartSpec);
+          } else if (tc.name === "generate_pptx") {
+            const inp = tc.input as { title?: string };
+            const idx = files.length;
+            files.push({
+              toolName: tc.name,
+              type: "pptx",
+              name: slugifyFileName(inp.title || "presentation"),
+              generating: true,
+              url: null,
+            });
+            fileToolQueue.push({ name: tc.name, input: tc.input, index: idx });
+          } else if (tc.name === "generate_xlsx") {
+            const inp = tc.input as { filename?: string };
+            const idx = files.length;
+            files.push({
+              toolName: tc.name,
+              type: "xlsx",
+              name: slugifyFileName(inp.filename || "workbook"),
+              generating: true,
+              url: null,
+            });
+            fileToolQueue.push({ name: tc.name, input: tc.input, index: idx });
+          } else if (tc.name === "generate_pdf") {
+            const inp = tc.input as { title?: string };
+            const idx = files.length;
+            files.push({
+              toolName: tc.name,
+              type: "pdf",
+              name: slugifyFileName(inp.title || "report"),
+              generating: true,
+              url: null,
+            });
+            fileToolQueue.push({ name: tc.name, input: tc.input, index: idx });
+          }
+        }
+
+        if (result.usage) {
+          totalInputTokensRef.current += result.usage.input_tokens || 0;
+          totalOutputTokensRef.current += result.usage.output_tokens || 0;
+          onTokenUpdate?.(
+            totalInputTokensRef.current,
+            totalOutputTokensRef.current
+          );
+        }
+
+        setMessages([
+          ...newMessages,
+          {
+            role: "assistant",
+            content: text,
+            files: files.length ? files : undefined,
+            charts: charts.length ? charts : undefined,
+          },
+        ]);
+
+        for (const job of fileToolQueue) {
+          void generateFileFromTool(
+            job.name,
+            job.input,
+            job.index,
+            clientNameMap
+          );
+        }
+      } catch (e: unknown) {
+        if ((e as Error).name !== "AbortError") {
+          const msg =
+            e instanceof Error ? e.message : "Connection failed";
           setMessages((prev) => {
             const copy = [...prev];
             copy[copy.length - 1] = {
               role: "assistant",
-              content: `Error: ${e.message || "Connection failed"}`,
+              content: `Error: ${msg}`,
             };
             return copy;
           });
@@ -304,7 +480,15 @@ export default function ChatInterface({
         abortRef.current = null;
       }
     },
-    [messages, streaming, streamResponse, onTokenUpdate]
+    [
+      messages,
+      streaming,
+      systemPrompt,
+      directory,
+      onTokenUpdate,
+      clientNameMap,
+      generateFileFromTool,
+    ]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -455,10 +639,16 @@ export default function ChatInterface({
                 }`}
               >
                 {msg.role === "assistant" ? (
-                  <div className="markdown-body text-sm leading-relaxed">
+                  <div className="markdown-body text-sm leading-relaxed space-y-1">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {msg.content || ""}
                     </ReactMarkdown>
+                    {msg.charts?.map((c, ci) => (
+                      <InlineChart key={ci} chartData={c} />
+                    ))}
+                    {msg.files?.map((f, fi) => (
+                      <ChatFileAttachment key={fi} file={f} />
+                    ))}
                     {streaming && i === messages.length - 1 && (
                       <span className="inline-flex gap-1 ml-1">
                         <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse-dot" />

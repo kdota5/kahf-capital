@@ -120,11 +120,39 @@ export interface BookAnalytics {
   totalEstimatedLiability?: number;
 }
 
+/** Inline chart from render_chart tool (Recharts) */
+export interface ChatChartSpec {
+  chart_type: string;
+  title: string;
+  data: {
+    labels: string[];
+    datasets: Array<{ label: string; values: number[]; color?: string }>;
+  };
+  x_axis_label?: string;
+  y_axis_label?: string;
+  show_legend?: boolean;
+  show_values?: boolean;
+  height?: number;
+  format?: "currency" | "percentage" | "number";
+}
+
+/** Generated file attachment (PPTX/XLSX/PDF) */
+export interface ChatFileAttachmentState {
+  toolName: string;
+  type: "pptx" | "xlsx" | "pdf";
+  name: string;
+  generating: boolean;
+  url: string | null;
+  error?: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   isInitialScan?: boolean;
   scanDuration?: number;
+  files?: ChatFileAttachmentState[];
+  charts?: ChatChartSpec[];
 }
 
 export interface PIIWarning {

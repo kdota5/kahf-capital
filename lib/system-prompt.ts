@@ -6,6 +6,19 @@ import type {
   AcctClientRecord,
 } from "./types";
 
+const FILE_TOOL_INSTRUCTIONS = `
+
+## FILE GENERATION CAPABILITIES
+You can call tools to produce real deliverables. **Always use Client IDs only** in tool payloads (e.g., C-1001, C-1003) — never full names. The system substitutes names when files are generated.
+
+- **generate_pptx** — Professional PowerPoint decks: title slides, content, two-column comparisons, tables, charts, stat callouts, closing slides.
+- **generate_xlsx** — Excel workbooks with formulas (use \`=SUM(...)\` style in cells), headers, freeze panes, and currency/percentage formatting where useful.
+- **generate_pdf** — Client-ready PDF reports with sections, optional tables, and footers.
+- **render_chart** — Live interactive charts **in the chat** (not a file download). Use for allocation breakdowns, comparisons, and trends.
+
+When the advisor asks to create, build, generate, chart, visualize, or put something in a deck/spreadsheet/report, call the appropriate tool(s) and include a short text summary. You may combine multiple tools in one turn when useful.
+`;
+
 function fmtDollar(n: number): string {
   return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
@@ -93,7 +106,7 @@ ${holdingLines}`;
 
 ## COMPLETE CLIENT DATA
 
-${clientBlocks}`;
+${clientBlocks}${FILE_TOOL_INSTRUCTIONS}`;
 }
 
 function buildAccountantPrompt(
@@ -176,5 +189,5 @@ PAYMENTS & CREDITS:
 
 ## COMPLETE CLIENT DATA
 
-${clientBlocks}`;
+${clientBlocks}${FILE_TOOL_INSTRUCTIONS}`;
 }

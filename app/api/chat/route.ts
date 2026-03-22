@@ -1,9 +1,13 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { FILE_GENERATION_TOOLS } from "@/lib/tools";
 
 export const maxDuration = 120;
 
 const anthropic = new Anthropic();
+
+const MODEL =
+  process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
 
 const PII_PATTERNS = [
   /\b\d{3}-\d{2}-\d{4}\b/,
@@ -11,7 +15,12 @@ const PII_PATTERNS = [
 ];
 
 export async function POST(req: NextRequest) {
-  const { messages, systemPrompt } = await req.json();
+  const body = await req.json();
+  const { messages, systemPrompt, enableFileTools } = body as {
+    messages: { role: string; content: string }[];
+    systemPrompt: string;
+    enableFileTools?: boolean;
+  };
 
   if (!systemPrompt || !messages) {
     return new Response(
@@ -32,15 +41,62 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const apiMessages = messages.map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }));
+
   try {
+    // Non-streaming JSON response with tool use (file generation)
+    if (enableFileTools) {
+      const response = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 8192,
+        system: systemPrompt,
+        messages: apiMessages,
+        tools: FILE_GENERATION_TOOLS,
+      });
+
+      let text = "";
+      const tool_calls: Array<{ id: string; name: string; input: unknown }> =
+        [];
+
+      for (const block of response.content) {
+        if (block.type === "text") {
+          text += block.text;
+        } else if (block.type === "tool_use") {
+          tool_calls.push({
+            id: block.id,
+            name: block.name,
+            input: block.input,
+          });
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          text,
+          tool_calls,
+          usage: response.usage
+            ? {
+                input_tokens: response.usage.input_tokens,
+                output_tokens: response.usage.output_tokens,
+              }
+            : undefined,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Streaming (initial scan & legacy)
     const stream = anthropic.messages.stream({
-      model: "claude-sonnet-4-20250514",
+      model: MODEL,
       max_tokens: 4096,
       system: systemPrompt,
-      messages: messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      messages: apiMessages,
     });
 
     const encoder = new TextEncoder();
@@ -76,11 +132,10 @@ export async function POST(req: NextRequest) {
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : "Stream error";
           controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ error: error.message || "Stream error" })}\n\n`
-            )
+            encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`)
           );
           controller.close();
         }
@@ -94,10 +149,11 @@ export async function POST(req: NextRequest) {
         Connection: "keep-alive",
       },
     });
-  } catch (error: any) {
-    return new Response(
-      JSON.stringify({ error: error.message || "Failed to connect to AI" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to connect to AI";
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
