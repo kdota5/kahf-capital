@@ -41,11 +41,11 @@ export default function SettingsPage() {
             </div>
             <div>
               <h3 className="font-heading font-bold text-base group-hover:text-accent transition-colors">
-                Firm Style Configuration
+                Skill Files
               </h3>
               <p className="text-sm text-text-secondary mt-0.5">
-                Teach Conda how your firm writes. Upload sample documents to
-                match your tone, structure, and vocabulary.
+                Upload sample decks, reports, and worksheets. Conda reads them
+                and builds from them when you ask it to create new deliverables.
               </p>
             </div>
           </div>

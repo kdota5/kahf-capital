@@ -1,77 +1,42 @@
-export interface DocumentTemplate {
+/**
+ * Skill File Store
+ *
+ * Uploaded documents (PPTX, PDF, XLSX, DOCX, TXT) are stored as "skill files."
+ * Their full extracted text is injected into the system prompt so Claude can
+ * reference the actual structure, sections, layout, and content when the
+ * advisor asks it to build a new deck, spreadsheet, or report.
+ *
+ * These are templates to build from — not style analysis inputs.
+ */
+
+export interface SkillFile {
   id: string;
   name: string;
   type: string;
+  fullText: string;
   wordCount: number;
-  textPreview: string;
   uploadedAt: string;
 }
 
-export interface FirmStyleProfile {
-  id: string;
+export interface SkillFileStore {
   firmName: string;
-  createdAt: string;
+  files: SkillFile[];
   updatedAt: string;
-  samplesUsed: number;
-
-  templates?: DocumentTemplate[];
-
-  structure: {
-    sectionOrder: string[];
-    executiveSummaryStyle: string;
-    sectionTransitions: string;
-    conclusionStyle: string;
-    typicalSectionCount: number;
-    usesNumberedSections: boolean;
-    usesAppendices: boolean;
-  };
-
-  tone: {
-    formality: "formal" | "professional_conversational" | "conversational";
-    personPronouns: string;
-    technicalDepth: "simplified" | "moderate" | "technical";
-    confidenceStyle: string;
-    clientRelationship: string;
-  };
-
-  formatting: {
-    dataPresentation: string;
-    numberFormat: string;
-    usesCharts: boolean;
-    chartStyle: string;
-    usesBulletPoints: boolean;
-    bulletStyle: string;
-    tableStyle: string;
-  };
-
-  vocabulary: {
-    preferredTerms: Record<string, string>;
-    avoidedTerms: string[];
-    signaturePhrases: string[];
-    jargonLevel: string;
-  };
-
-  compliance: {
-    requiredDisclaimers: string[];
-    performanceDisclosure: string;
-    complianceNotes: string;
-  };
-
-  promptFragment: string;
 }
 
-const STORAGE_KEY = "conda_firm_style";
-const BANNER_DISMISSED_KEY = "conda_style_banner_dismissed";
+const STORAGE_KEY = "conda_skill_files";
+const BANNER_DISMISSED_KEY = "conda_skill_banner_dismissed";
+const MAX_WORDS_PER_FILE = 8000;
 
-export function saveStyleProfile(profile: FirmStyleProfile): void {
+export function saveSkillFiles(store: SkillFileStore): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch {
-    // localStorage may be full or unavailable
+    // localStorage may be full
   }
 }
 
-export function loadStyleProfile(): FirmStyleProfile | null {
+export function loadSkillFiles(): SkillFileStore | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -80,7 +45,7 @@ export function loadStyleProfile(): FirmStyleProfile | null {
   }
 }
 
-export function clearStyleProfile(): void {
+export function clearSkillFiles(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -88,23 +53,26 @@ export function clearStyleProfile(): void {
   }
 }
 
-export function exportStyleProfile(): string | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  return raw;
-}
-
-export function importStyleProfile(json: string): FirmStyleProfile | null {
+export function exportSkillFiles(): string | null {
   try {
-    const profile = JSON.parse(json) as FirmStyleProfile;
-    if (!profile.id || !profile.promptFragment) return null;
-    saveStyleProfile(profile);
-    return profile;
+    return localStorage.getItem(STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-export function isStyleBannerDismissed(): boolean {
+export function importSkillFiles(json: string): SkillFileStore | null {
+  try {
+    const store = JSON.parse(json) as SkillFileStore;
+    if (!store.files?.length) return null;
+    saveSkillFiles(store);
+    return store;
+  } catch {
+    return null;
+  }
+}
+
+export function isBannerDismissed(): boolean {
   try {
     return localStorage.getItem(BANNER_DISMISSED_KEY) === "true";
   } catch {
@@ -112,7 +80,7 @@ export function isStyleBannerDismissed(): boolean {
   }
 }
 
-export function dismissStyleBanner(): void {
+export function dismissBanner(): void {
   try {
     localStorage.setItem(BANNER_DISMISSED_KEY, "true");
   } catch {
@@ -120,62 +88,55 @@ export function dismissStyleBanner(): void {
   }
 }
 
+function truncateForPrompt(text: string): string {
+  const words = text.split(/\s+/);
+  if (words.length <= MAX_WORDS_PER_FILE) return text;
+  return (
+    words.slice(0, MAX_WORDS_PER_FILE).join(" ") +
+    `\n\n[... truncated from ${words.length} words]`
+  );
+}
+
 /**
- * Build the style injection fragment for the system prompt.
- * Returns empty string if no style profile is configured.
+ * Build the skill file injection block for the system prompt.
+ * Includes the full extracted text of each uploaded document so
+ * Claude can reference exact structure, sections, and content
+ * when generating new deliverables.
  */
-export function getStylePromptInjection(): string {
+export function getSkillFileInjection(): string {
   if (typeof window === "undefined") return "";
 
-  const profile = loadStyleProfile();
-  if (!profile?.promptFragment) return "";
+  const store = loadSkillFiles();
+  if (!store?.files?.length) return "";
 
-  const preferredTermLines = Object.entries(profile.vocabulary.preferredTerms || {})
-    .map(([k, v]) => `- Use "${v}" instead of "${k}"`)
-    .join("\n");
+  const fileBlocks = store.files
+    .map((f, i) => {
+      const truncated = truncateForPrompt(f.fullText);
+      return `### SKILL FILE ${i + 1}: ${f.name} (${f.type.toUpperCase()}, ~${f.wordCount.toLocaleString()} words)
 
-  const templateBlock =
-    profile.templates && profile.templates.length > 0
-      ? `\n### Available document templates:
-The advisor uploaded these sample documents. When they ask you to generate a proposal, report, deck, or similar deliverable, reference these by name and confirm which one to base the output on before generating.
-${profile.templates.map((t, i) => `${i + 1}. **${t.name}** (${t.type.toUpperCase()}, ~${t.wordCount.toLocaleString()} words) — Preview: "${t.textPreview.slice(0, 150).replace(/\n/g, " ")}..."`).join("\n")}
-`
-      : "";
+\`\`\`
+${truncated}
+\`\`\``;
+    })
+    .join("\n\n");
 
   return `
 
-## FIRM WRITING STYLE — MANDATORY
+## SKILL FILES — DOCUMENT TEMPLATES
 
-The advisor's firm has a specific writing style that ALL generated content must follow. This includes chat responses, proposals, reports, presentation text, and any other written output.
+The advisor has uploaded ${store.files.length} sample document${store.files.length !== 1 ? "s" : ""} from their firm${store.firmName ? ` (${store.firmName})` : ""}. These are real examples of the firm's work — proposals, reports, decks, worksheets.
 
-${profile.promptFragment}
-${templateBlock}
-### Structural requirements:
-- Section order: ${profile.structure.sectionOrder.join(" → ")}
-- Executive summaries: ${profile.structure.executiveSummaryStyle}
-- Transitions: ${profile.structure.sectionTransitions}
-- Conclusions: ${profile.structure.conclusionStyle}
-${profile.structure.usesAppendices ? "- Include appendices for detailed data when appropriate" : "- Do not use appendices — keep everything in the main body"}
+**How to use these:**
+- When the advisor asks you to create a deliverable (deck, spreadsheet, report, proposal), study the relevant skill file below and replicate its structure, section order, formatting patterns, and tone.
+- If multiple skill files could apply, ask the advisor which one to use as the base: "I see you have [Skill File 1] and [Skill File 2]. Which should I base this on?"
+- Match the section headings, slide order, column layouts, disclaimer text, and overall organization from the skill file — adapt the content to the new client data.
+- These are templates to build from. The advisor expects output that looks like their firm produced it.
 
-### Tone:
-- Formality: ${profile.tone.formality}
-- Pronouns: ${profile.tone.personPronouns}
-- Technical depth: ${profile.tone.technicalDepth}
-- Confidence: ${profile.tone.confidenceStyle}
-
-### Formatting:
-- Data presentation: ${profile.formatting.dataPresentation}
-- Number format: ${profile.formatting.numberFormat}
-${profile.formatting.usesBulletPoints ? `- Bullets: ${profile.formatting.bulletStyle}` : "- Do not use bullet points — write in prose paragraphs"}
-- Tables: ${profile.formatting.tableStyle}
-
-### Vocabulary:
-${preferredTermLines}
-- Avoid: ${(profile.vocabulary.avoidedTerms || []).join(", ")}
-${(profile.vocabulary.signaturePhrases || []).length > 0 ? `- Incorporate naturally: ${profile.vocabulary.signaturePhrases.map((p) => `"${p}"`).join(", ")}` : ""}
-
-### Required disclaimers:
-${(profile.compliance.requiredDisclaimers || []).map((d) => `- "${d}"`).join("\n")}
-${profile.compliance.performanceDisclosure ? `- Forward-looking statements: ${profile.compliance.performanceDisclosure}` : ""}
+${fileBlocks}
 `;
 }
+
+// Legacy aliases for backward compatibility with review page imports
+export const loadStyleProfile = loadSkillFiles;
+export const isStyleBannerDismissed = isBannerDismissed;
+export const dismissStyleBanner = dismissBanner;

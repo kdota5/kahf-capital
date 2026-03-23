@@ -6,15 +6,6 @@
     "app/api/generate-file/route.ts": {
       "maxDuration": 60
     },
-    "app/api/analyze-style/route.ts": {
-      "maxDuration": 120
-    },
-    "app/api/analyze-style/regenerate/route.ts": {
-      "maxDuration": 60
-    },
-    "app/api/analyze-style/compare/route.ts": {
-      "maxDuration": 120
-    },
     "app/api/parse-document/route.ts": {
       "maxDuration": 30
     }

@@ -5,7 +5,7 @@ import type {
   FAHolding,
   AcctClientRecord,
 } from "./types";
-import { getStylePromptInjection } from "./style-engine";
+import { getSkillFileInjection } from "./style-engine";
 
 const FILE_TOOL_INSTRUCTIONS = `
 
@@ -21,10 +21,12 @@ You can call tools to produce real, downloadable files. **Always use Client IDs 
 
 ### How to handle deliverable requests:
 When the advisor asks to create, build, generate, chart, visualize, or put something in a deck/spreadsheet/report:
-1. If the firm has uploaded sample documents (listed in the FIRM WRITING STYLE section), **ask which sample to use as the template** before generating. For example: "I see you have [Sample Proposal] and [Q3 Review] on file. Which one should I use as the structural template for this proposal?"
-2. Once confirmed (or if no templates exist), call the appropriate tool(s) and include a short text summary alongside the generated file.
-3. You may combine multiple tools in one turn when useful (e.g., a chart + a supporting spreadsheet).
-4. All output — proposals, reports, analyses, decks, worksheets — is generated directly in this chat. There is no separate report generation step.
+1. If the firm has uploaded skill files (listed in the SKILL FILES section below), **ask which skill file to use as the template** before generating. For example: "I see you have [Client Proposal Template] and [Q3 Review Deck] on file. Which should I base this on?"
+2. Once confirmed, study the skill file's structure — slide order, section headings, column layouts, formatting — and replicate it with the new client data. The output should look like the firm built it.
+3. If no skill files exist, generate using professional defaults.
+4. Call the appropriate tool(s) and include a short text summary alongside the generated file.
+5. You may combine multiple tools in one turn when useful.
+6. All output — proposals, reports, analyses, decks, worksheets — is generated directly in this chat. There is no separate report generation step.
 `;
 
 function fmtDollar(n: number): string {
@@ -114,7 +116,7 @@ ${holdingLines}`;
 
 ## COMPLETE CLIENT DATA
 
-${clientBlocks}${FILE_TOOL_INSTRUCTIONS}${getStylePromptInjection()}`;
+${clientBlocks}${FILE_TOOL_INSTRUCTIONS}${getSkillFileInjection()}`;
 }
 
 function buildAccountantPrompt(
@@ -197,5 +199,5 @@ PAYMENTS & CREDITS:
 
 ## COMPLETE CLIENT DATA
 
-${clientBlocks}${FILE_TOOL_INSTRUCTIONS}${getStylePromptInjection()}`;
+${clientBlocks}${FILE_TOOL_INSTRUCTIONS}${getSkillFileInjection()}`;
 }
